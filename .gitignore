@@ -68,6 +68,10 @@ ENV/
 models/
 checkpoints/
 
+# Graphviz
+*.dot
+*.gv
+
 # Results and outputs
 results/
 output/
@@ -77,6 +81,7 @@ experiments/
 *.jpg
 *.pdf
 *.txt
+*.html
 roc_curve.png
 confusion_matrix.png
 metrics.txt

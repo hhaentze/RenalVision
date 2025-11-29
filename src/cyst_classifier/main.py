@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from .explainability import generate_explanation_report
 from .features import Feature, extract_features
 from .models import ModelBundle, compute_feature_correlations, predict, predict_proba, train_model
 from .parser import create_parser, validate_args
@@ -179,12 +180,25 @@ def train_mode(args):
     model_bundle.save(args.output)
     print(f"\nModel saved to {args.output}")
 
+    # Generate explanations if requested
+    if args.explain:
+        explanation_dir = Path(args.output).parent / "explanations"
+        print("\nGenerating model explanations...")
+        generate_explanation_report(
+            model_bundle,
+            explanation_dir,
+            X,
+            y,
+            verbose=True,
+            rule_format=args.rule_format if args.model == "tree" else "nested",
+        )
+
     # Print feature importance for tree
-    if args.model == "tree":
-        importances = model_bundle.model.feature_importances_
-        print("\nFeature importances:")
-        for fname, imp in sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True):
-            print(f"  {fname}: {imp:.4f}")
+    # if args.model == "tree":
+    #     importances = model_bundle.model.feature_importances_
+    #     print("\nFeature importances:")
+    #     for fname, imp in sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True):
+    #         print(f"  {fname}: {imp:.4f}")
 
 
 def infer_mode(args):
@@ -397,6 +411,17 @@ def eval_mode(args):
         f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n")
 
     print(f"\nResults saved to {args.output_dir}")
+
+    # Generate explanations if requested
+    if args.explain:
+        print("\nGenerating model explanations...")
+        generate_explanation_report(
+            model_bundle,
+            output_dir,
+            X if is_feature_csv(df) else None,  # Only pass X if we have it from features
+            y_true,
+            verbose=True,
+        )
 
 
 def main():

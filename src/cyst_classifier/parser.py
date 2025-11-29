@@ -41,6 +41,16 @@ def create_parser():
     train_parser.add_argument(
         "--tree-depth", type=int, default=5, help="Max depth for decision tree (default: 5)"
     )
+    train_parser.add_argument(
+        "--explain", action="store_true", help="Generate detailed model explanations"
+    )
+    train_parser.add_argument(
+        "--rule-format",
+        type=str,
+        choices=["nested", "flat"],
+        default="nested",
+        help="Format for decision tree rules (default: nested)",
+    )
 
     # ========== INFER MODE ==========
     infer_parser = subparsers.add_parser("infer", help="Run inference")
@@ -84,6 +94,9 @@ def create_parser():
     )
     eval_parser.add_argument(
         "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
+    )
+    eval_parser.add_argument(
+        "--explain", action="store_true", help="Generate detailed model explanations"
     )
 
     return parser

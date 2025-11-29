@@ -18,6 +18,8 @@ dependencies = [
     "matplotlib>=3.4.0",
     "nibabel>=3.2.0",
     "torch>=1.10.0",
+    "statsmodels>=0.13.0",
+    "graphviz>=0.20.0",
     "tqdm",
     "scikit-image",
 ]
@@ -30,6 +32,7 @@ dev = [
     "ruff[jupyter]",
     "mypy",           # static typechecks
     "nbqa",           # Tool to run linters on notebooks
+    "ipykernel",
 ]
 
 [project.scripts]
