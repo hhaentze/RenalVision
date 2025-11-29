@@ -69,7 +69,7 @@ python -m cyst_classifier.main eval --data test.csv --model model.pkl --output-d
 
 ## Data Format
 
-Input CSV should have columns: `seg_path`, `image_path`
+Input CSV should have columns: `case`,`seg_path`, `image_path`
 
 Segmentation labels:
 - 1: Kidney (ignored)
