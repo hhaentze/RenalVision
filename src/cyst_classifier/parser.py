@@ -1,4 +1,4 @@
-"""Command-line argument parser for KITS classifier."""
+"""Command-line argument parser for Cyst classifier."""
 
 import argparse
 from pathlib import Path
@@ -7,7 +7,7 @@ from pathlib import Path
 def create_parser():
     """Create argument parser for train/infer/eval modes."""
     parser = argparse.ArgumentParser(
-        description="KITS Cyst vs Tumor Classifier",
+        description="Cyst vs Tumor Classifier",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     

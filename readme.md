@@ -1,4 +1,4 @@
-# KITS Cyst vs Tumor Classifier
+# Cyst vs Tumor Classifier
 
 A radiomics-based classifier for distinguishing cysts from solid tumors in CT scans.
 
@@ -12,7 +12,7 @@ pip install -e .
 
 ### Generate train/test split
 ```python
-from kits_classifier.data_utils import generate_train_test_split
+from cyst_classifier.data_utils import generate_train_test_split
 import pandas as pd
 
 df = pd.read_csv("data.csv")
@@ -24,38 +24,38 @@ df.iloc[test_idx].to_csv("test.csv", index=False)
 ### Pre-extract features (RECOMMENDED for fast experimentation)
 ```bash
 # Extract features once (slow)
-python -m kits_classifier.extract_features_script --data train.csv --output features_train.csv
-python -m kits_classifier.extract_features_script --data test.csv --output features_test.csv
+python -m cyst_classifier.extract_features_script --data train.csv --output features_train.csv
+python -m cyst_classifier.extract_features_script --data test.csv --output features_test.csv
 
 # Train on cached features (fast - seconds instead of hours!)
-python -m kits_classifier.main train --data features_train.csv --model logistic --output model.pkl
+python -m cyst_classifier.main train --data features_train.csv --model logistic --output model.pkl
 
 # Evaluate on cached features (fast)
-python -m kits_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
+python -m cyst_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
 ```
 
 ### Train a model (direct from images - slower)
 ```bash
-python -m kits_classifier.main train --data train.csv --model logistic --output model.pkl
+python -m cyst_classifier.main train --data train.csv --model logistic --output model.pkl
 ```
 
 ### Inference on single lesion
 ```bash
-python -m kits_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl
+python -m cyst_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl
 ```
 
 ### Inference on multi-lesion scan
 ```bash
-python -m kits_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl --multi-lesion --output result.nii.gz
+python -m cyst_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl --multi-lesion --output result.nii.gz
 ```
 
 ### Evaluate model
 ```bash
 # From cached features (fast)
-python -m kits_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
+python -m cyst_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
 
 # Or directly from images (slower)
-python -m kits_classifier.main eval --data test.csv --model model.pkl --output-dir results/
+python -m cyst_classifier.main eval --data test.csv --model model.pkl --output-dir results/
 ```
 
 ## Performance Tips

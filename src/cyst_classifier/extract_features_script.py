@@ -14,7 +14,7 @@ from .features import Feature, extract_features
 def create_extraction_parser():
     """Create argument parser for feature extraction."""
     parser = argparse.ArgumentParser(
-        description="Extract and cache radiomics features from KITS data",
+        description="Extract and cache radiomics features from data",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     

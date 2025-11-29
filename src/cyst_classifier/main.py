@@ -1,4 +1,4 @@
-"""Main entry point for KITS classifier."""
+"""Main entry point for Cyst classifier."""
 
 import sys
 import pandas as pd
