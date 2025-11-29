@@ -35,7 +35,7 @@ def is_feature_csv(df):
     # Image CSV has: seg_path, image_path
 
     has_image_paths = "image_path" in df.columns and "seg_path" in df.columns
-    has_features = "label" in df.columns and "source_file" in df.columns
+    has_features = "label" in df.columns and "case" in df.columns
 
     # Check for at least some feature columns
     feature_cols = ["mean_hu", "std_hu"]
@@ -49,7 +49,7 @@ def is_feature_csv(df):
         raise ValueError(
             "Unrecognized CSV format. Expected either:\n"
             "  - Image CSV: columns 'image_path', 'seg_path'\n"
-            "  - Feature CSV: columns 'source_file', 'lesion_id', 'label', and feature columns"
+            "  - Feature CSV: columns case', 'lesion_id', 'label', and feature columns"
         )
 
 
