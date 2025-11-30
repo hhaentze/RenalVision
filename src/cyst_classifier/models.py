@@ -107,7 +107,10 @@ def train_model(
 
         # Train decision tree
         model = DecisionTreeClassifier(
-            max_depth=tree_max_depth, random_state=42, class_weight="balanced"
+            max_depth=tree_max_depth,
+            random_state=42,
+            class_weight="balanced",
+            min_samples_leaf=5,
         )
         model.fit(X_scaled, y_binary)
     else:
