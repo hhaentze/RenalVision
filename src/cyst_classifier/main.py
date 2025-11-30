@@ -8,15 +8,23 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from .explainability import generate_explanation_report
+from .explainability import (
+    explain_decision_tree,
+    explain_logistic_regression,
+    explain_with_uncertainty,
+)
 from .features import Feature, extract_features
 from .models import ModelBundle, compute_feature_correlations, predict, predict_proba, train_model
 from .parser import create_parser, validate_args
 from .preprocessing import extract_lesions, load_and_preprocess
 from .utils import (
+    apply_uncertainty_threshold,
     compute_metrics,
+    compute_metrics_with_uncertainty,
+    find_uncertainty_thresholds,
     get_all_lesion_components,
     plot_confusion_matrix,
+    plot_confusion_matrix_with_unsure,
     plot_roc_curve,
     print_metrics_report,
 )
@@ -32,7 +40,7 @@ def is_feature_csv(df):
     Returns:
         bool: True if CSV contains features, False if it contains image paths
     """
-    # Feature CSV has: source_file, lesion_id, label, volume_voxels, and feature columns
+    # Feature CSV has: case, lesion_id, label, volume_voxels, and feature columns
     # Image CSV has: seg_path, image_path
 
     has_image_paths = "image_path" in df.columns and "seg_path" in df.columns
@@ -50,7 +58,7 @@ def is_feature_csv(df):
         raise ValueError(
             "Unrecognized CSV format. Expected either:\n"
             "  - Image CSV: columns 'image_path', 'seg_path'\n"
-            "  - Feature CSV: columns case', 'lesion_id', 'label', and feature columns"
+            "  - Feature CSV: columns 'case', 'lesion_id', 'label', and feature columns"
         )
 
 
@@ -177,28 +185,31 @@ def train_mode(args):
     )
 
     # Save model
-    model_bundle.save(args.output)
-    print(f"\nModel saved to {args.output}")
+    output_dir = Path(args.output_dir)
+    model_path = output_dir / "model.pkl"
+    model_bundle.save(model_path)
+    print(f"\nModel saved to {model_path}")
 
     # Generate explanations if requested
     if args.explain:
-        explanation_dir = Path(args.output).parent / "explanations"
+        explanation_dir = output_dir / "explanations"
         print("\nGenerating model explanations...")
-        generate_explanation_report(
-            model_bundle,
-            explanation_dir,
-            X,
-            y,
-            verbose=True,
-            rule_format=args.rule_format if args.model == "tree" else "nested",
-        )
+
+        if model_bundle.model_type == "logistic":
+            explain_logistic_regression(
+                model_bundle, X, y, output_dir=explanation_dir, verbose=True
+            )
+        elif model_bundle.model_type == "tree":
+            explain_decision_tree(
+                model_bundle, output_dir=explanation_dir, verbose=True, rule_format=args.rule_format
+            )
 
     # Print feature importance for tree
-    # if args.model == "tree":
-    #     importances = model_bundle.model.feature_importances_
-    #     print("\nFeature importances:")
-    #     for fname, imp in sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True):
-    #         print(f"  {fname}: {imp:.4f}")
+    if args.model == "tree":
+        importances = model_bundle.model.feature_importances_
+        print("\nFeature importances:")
+        for fname, imp in sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True):
+            print(f"  {fname}: {imp:.4f}")
 
 
 def infer_mode(args):
@@ -237,7 +248,7 @@ def infer_mode(args):
         # Get labeled components
         labeled_seg, num_components = get_all_lesion_components(seg)
 
-        # Create output segmentation (0=background, 2=tumor, 3=cyst)
+        # Create output segmentation (0=background, 2=tumor, 3=cyst, 4=unsure)
         output_seg = np.zeros_like(seg)
 
         component_id = 1
@@ -246,11 +257,22 @@ def infer_mode(args):
             features = extract_features(lesion_img, lesion_mask, feature_list)
             feature_vector = np.array([[features[f.value] for f in feature_list]])
 
-            # Predict
-            pred_class = predict(model_bundle, feature_vector)[0]
+            # Get probabilities
+            pred_proba = predict_proba(model_bundle, feature_vector)[0]
 
-            # Map prediction to output label (0->2, 1->3)
-            output_label = 2 if pred_class == 0 else 3
+            # Apply uncertainty threshold
+            pred_with_unsure, max_prob = apply_uncertainty_threshold(
+                pred_proba.reshape(1, -1), args.uncertainty_threshold
+            )
+            pred_class = pred_with_unsure[0]
+
+            # Map prediction to output label (0->2, 1->3, 2->4)
+            if pred_class == 2:  # Unsure
+                output_label = 4
+            elif pred_class == 0:  # Tumor
+                output_label = 2
+            else:  # Cyst
+                output_label = 3
 
             # Update output segmentation for this component
             output_seg[labeled_seg == component_id] = output_label
@@ -279,12 +301,23 @@ def infer_mode(args):
         features = extract_features(lesion_img, lesion_mask, feature_list)
         feature_vector = np.array([[features[f.value] for f in feature_list]])
 
-        # Predict
-        pred_class = predict(model_bundle, feature_vector)[0]
+        # Get probabilities
         pred_proba = predict_proba(model_bundle, feature_vector)[0]
 
+        # Apply uncertainty threshold
+        pred_with_unsure, max_prob = apply_uncertainty_threshold(
+            pred_proba.reshape(1, -1), args.uncertainty_threshold
+        )
+        pred_class = pred_with_unsure[0]
+
         # Print result
-        class_name = "Tumor" if pred_class == 0 else "Cyst"
+        if pred_class == 2:
+            class_name = "Unsure"
+        elif pred_class == 0:
+            class_name = "Tumor"
+        else:
+            class_name = "Cyst"
+
         print(f"\nPrediction: {class_name}")
         print(f"Confidence: Tumor={pred_proba[0]:.3f}, Cyst={pred_proba[1]:.3f}")
 
@@ -296,6 +329,10 @@ def eval_mode(args):
     Supports two input formats:
     1. Image CSV - extracts features on-the-fly
     2. Feature CSV - loads directly (much faster)
+
+    Two evaluation modes:
+    1. --find-threshold: Analyze uncertainty thresholds (for validation)
+    2. --uncertainty-threshold: Evaluate with specific threshold
     """
     print(f"Loading model from {args.model}...")
     model_bundle = ModelBundle.load(args.model)
@@ -314,7 +351,6 @@ def eval_mode(args):
 
         # Predict
         print("Running inference on test set...")
-        y_pred = predict(model_bundle, X)
         y_proba = predict_proba(model_bundle, X)
 
         print("\nEvaluation summary:")
@@ -327,7 +363,6 @@ def eval_mode(args):
         print("  Tip: Use extract_features_script.py to pre-extract features for faster evaluation")
 
         # Extract features and predict (original slow path)
-        all_predictions = []
         all_labels = []
         all_probabilities = []
 
@@ -351,10 +386,8 @@ def eval_mode(args):
                     feature_vector = np.array([[features[f.value] for f in feature_list]])
 
                     # Predict
-                    pred_class = predict(model_bundle, feature_vector)[0]
                     pred_proba = predict_proba(model_bundle, feature_vector)[0]
 
-                    all_predictions.append(pred_class)
                     all_labels.append(label)
                     all_probabilities.append(pred_proba)
 
@@ -362,13 +395,12 @@ def eval_mode(args):
                 print(f"\nWarning: Failed to process {row['image_path']}: {e}")
                 continue
 
-        if len(all_predictions) == 0:
+        if len(all_labels) == 0:
             print("Error: No valid predictions made!")
             sys.exit(1)
 
         # Convert to numpy arrays
         y_true = np.array(all_labels)
-        y_pred = np.array(all_predictions)
         y_proba = np.array(all_probabilities)
 
         print("\nEvaluation summary:")
@@ -376,52 +408,133 @@ def eval_mode(args):
         print(f"  Tumors (label=2): {np.sum(y_true == 2)}")
         print(f"  Cysts (label=3): {np.sum(y_true == 3)}")
 
-    # Compute metrics
-    metrics = compute_metrics(y_true, y_pred, y_proba)
-
-    # Print metrics
-    print_metrics_report(metrics)
-
-    # Save and plot ROC curve
+    # Create output directory
     output_dir = Path(args.output_dir)
-    roc_path = output_dir / "roc_curve.png"
-    plot_roc_curve(y_true, y_proba, str(roc_path))
 
-    # Save and plot confusion matrix
-    cm_path = output_dir / "confusion_matrix.png"
-    plot_confusion_matrix(metrics["confusion_matrix"], str(cm_path))
+    # Handle uncertainty analysis modes
+    if args.find_threshold:
+        # Threshold analysis mode
+        print("\nAnalyzing uncertainty thresholds...")
+        df_thresholds = find_uncertainty_thresholds(y_true, y_proba, output_dir)
+        print("\nThreshold Analysis:")
+        print(df_thresholds.to_string(index=False))
 
-    # Save metrics to text file
-    metrics_path = output_dir / "metrics.txt"
-    with open(metrics_path, "w") as f:
-        f.write("CLASSIFICATION METRICS\n")
-        f.write("=" * 50 + "\n")
-        f.write(f"Accuracy:    {metrics['accuracy']:.4f}\n")
-        f.write(f"F1 Score:    {metrics['f1']:.4f}\n")
-        f.write(f"Sensitivity: {metrics['sensitivity']:.4f}\n")
-        f.write(f"Specificity: {metrics['specificity']:.4f}\n")
-        if metrics["auroc"] is not None:
-            f.write(f"AUROC:       {metrics['auroc']:.4f}\n")
-        f.write("\n")
-        cm = metrics["confusion_matrix"]
-        f.write("Confusion Matrix:\n")
-        f.write("                Predicted\n")
-        f.write("              Tumor  Cyst\n")
-        f.write(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}\n")
-        f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n")
+    else:
+        # Standard evaluation with optional uncertainty threshold
+        threshold = args.uncertainty_threshold
+        use_uncertainty = threshold > 0.5
 
-    print(f"\nResults saved to {args.output_dir}")
+        if use_uncertainty:
+            print(f"\nUsing uncertainty threshold: {threshold}")
+            y_pred_with_unsure, _ = apply_uncertainty_threshold(y_proba, threshold)
+            metrics = compute_metrics_with_uncertainty(y_true, y_pred_with_unsure, y_proba)
 
-    # Generate explanations if requested
-    if args.explain:
-        print("\nGenerating model explanations...")
-        generate_explanation_report(
-            model_bundle,
-            output_dir,
-            X if is_feature_csv(df) else None,  # Only pass X if we have it from features
-            y_true,
-            verbose=True,
-        )
+            # Print metrics
+            print_metrics_report(metrics, exclude_unsure=True)
+
+            # Save and plot ROC curve (only on certain predictions)
+            roc_path = output_dir / "roc_curve.png"
+            certain_mask = y_pred_with_unsure != 2
+            if np.sum(certain_mask) > 0:
+                plot_roc_curve(y_true[certain_mask], y_proba[certain_mask], str(roc_path))
+
+            # Plot confusion matrix (2x2, excluding unsure)
+            cm_path = output_dir / "confusion_matrix.png"
+            plot_confusion_matrix_with_unsure(
+                metrics["confusion_matrix_with_unsure"], str(cm_path), include_unsure=False
+            )
+
+            # Save metrics to text file
+            metrics_path = output_dir / "metrics.txt"
+            with open(metrics_path, "w") as f:
+                f.write("CLASSIFICATION METRICS (excluding unsure)\n")
+                f.write("=" * 50 + "\n")
+                f.write(f"Uncertainty threshold: {threshold}\n\n")
+                f.write(f"Accuracy:    {metrics['accuracy']:.4f}\n")
+                f.write(f"F1 Score:    {metrics['f1']:.4f}\n")
+                f.write(f"Sensitivity: {metrics['sensitivity']:.4f}\n")
+                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
+                if metrics["auroc"] is not None:
+                    f.write(f"AUROC:       {metrics['auroc']:.4f}\n")
+                f.write(
+                    f"\nCoverage:    {metrics['coverage']:.4f} ({metrics['n_certain']}/{metrics['n_certain'] + metrics['n_unsure']} certain)\n"
+                )
+                f.write(f"Unsure:      {metrics['n_unsure']} predictions\n\n")
+                cm = metrics["confusion_matrix"]
+                f.write("Confusion Matrix (certain predictions only):\n")
+                f.write("                Predicted\n")
+                f.write("              Tumor  Cyst\n")
+                f.write(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}\n")
+                f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n\n")
+                cm_full = metrics["confusion_matrix_with_unsure"]
+                f.write("Full Confusion Matrix (including unsure):\n")
+                f.write("                     Predicted\n")
+                f.write("              Tumor  Cyst  Unsure\n")
+                f.write(
+                    f"True Tumor    {cm_full[0, 0]:5d}  {cm_full[0, 1]:5d}   {cm_full[0, 2]:5d}\n"
+                )
+                f.write(
+                    f"     Cyst     {cm_full[1, 0]:5d}  {cm_full[1, 1]:5d}   {cm_full[1, 2]:5d}\n"
+                )
+
+        else:
+            # Standard evaluation (no uncertainty)
+            y_pred = predict(model_bundle, X) if is_feature_csv(df) else y_proba.argmax(axis=1)
+            metrics = compute_metrics(y_true, y_pred, y_proba)
+
+            # Print metrics
+            print_metrics_report(metrics)
+
+            # Save and plot ROC curve
+            roc_path = output_dir / "roc_curve.png"
+            plot_roc_curve(y_true, y_proba, str(roc_path))
+
+            # Save and plot confusion matrix
+            cm_path = output_dir / "confusion_matrix.png"
+            plot_confusion_matrix(metrics["confusion_matrix"], str(cm_path))
+
+            # Save metrics to text file
+            metrics_path = output_dir / "metrics.txt"
+            with open(metrics_path, "w") as f:
+                f.write("CLASSIFICATION METRICS\n")
+                f.write("=" * 50 + "\n")
+                f.write(f"Accuracy:    {metrics['accuracy']:.4f}\n")
+                f.write(f"F1 Score:    {metrics['f1']:.4f}\n")
+                f.write(f"Sensitivity: {metrics['sensitivity']:.4f}\n")
+                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
+                if metrics["auroc"] is not None:
+                    f.write(f"AUROC:       {metrics['auroc']:.4f}\n")
+                f.write("\n")
+                cm = metrics["confusion_matrix"]
+                f.write("Confusion Matrix:\n")
+                f.write("                Predicted\n")
+                f.write("              Tumor  Cyst\n")
+                f.write(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}\n")
+                f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n")
+
+        print(f"\nResults saved to {args.output_dir}")
+
+        # Generate explanations if requested
+        if args.explain:
+            print("\nGenerating model explanations...")
+            if use_uncertainty:
+                # Uncertainty-aware explanations
+                explain_with_uncertainty(model_bundle, y_proba, threshold, output_dir, verbose=True)
+            else:
+                # Standard explanations
+                explanation_dir = output_dir / "explanations"
+                if model_bundle.model_type == "logistic":
+                    explain_logistic_regression(
+                        model_bundle,
+                        X if is_feature_csv(df) else None,
+                        y_true,
+                        output_dir=explanation_dir,
+                        verbose=True,
+                    )
+                elif model_bundle.model_type == "tree":
+                    explain_decision_tree(
+                        model_bundle, output_dir=explanation_dir, verbose=True, rule_format="nested"
+                    )
 
 
 def main():

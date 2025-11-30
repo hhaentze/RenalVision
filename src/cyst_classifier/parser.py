@@ -1,4 +1,4 @@
-"""Command-line argument parser for Cyst classifier."""
+"""Command-line argument parser for KITS classifier."""
 
 import argparse
 from pathlib import Path
@@ -7,7 +7,8 @@ from pathlib import Path
 def create_parser():
     """Create argument parser for train/infer/eval modes."""
     parser = argparse.ArgumentParser(
-        description="Cyst vs Tumor Classifier", formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Cyst vs Tumor Classifier",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     subparsers = parser.add_subparsers(dest="mode", help="Operation mode", required=True)
@@ -25,7 +26,10 @@ def create_parser():
         help="Model type: logistic regression or decision tree",
     )
     train_parser.add_argument(
-        "--output", type=str, required=True, help="Output path for trained model (.pkl)"
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Output directory (will contain model.pkl and explanations/)",
     )
     train_parser.add_argument(
         "--features",
@@ -49,7 +53,7 @@ def create_parser():
         type=str,
         choices=["nested", "flat"],
         default="nested",
-        help="Format for decision tree rules (default: nested)",
+        help="Format for decision tree rules: nested (if-else) or flat (list of paths) (default: nested)",
     )
 
     # ========== INFER MODE ==========
@@ -80,6 +84,12 @@ def create_parser():
     infer_parser.add_argument(
         "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
     )
+    infer_parser.add_argument(
+        "--uncertainty-threshold",
+        type=float,
+        default=0.5,
+        help="Probability threshold for uncertain predictions (default: 0.5 = no unsure class, label=4)",
+    )
 
     # ========== EVAL MODE ==========
     eval_parser = subparsers.add_parser("eval", help="Evaluate model")
@@ -95,8 +105,24 @@ def create_parser():
     eval_parser.add_argument(
         "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
     )
+
+    # Uncertainty handling (mutually exclusive)
+    uncertainty_group = eval_parser.add_mutually_exclusive_group()
+    uncertainty_group.add_argument(
+        "--find-threshold",
+        action="store_true",
+        help="Analyze uncertainty thresholds (for validation set only)",
+    )
+    uncertainty_group.add_argument(
+        "--uncertainty-threshold",
+        type=float,
+        default=0.5,
+        help="Probability threshold for uncertain predictions (default: 0.5 = no unsure class)",
+    )
     eval_parser.add_argument(
-        "--explain", action="store_true", help="Generate detailed model explanations"
+        "--explain",
+        action="store_true",
+        help="Generate detailed model explanations (includes uncertainty if threshold > 0.5)",
     )
 
     return parser
