@@ -20,6 +20,8 @@ make install-dev
 ```
 ## Usage
 
+TLDR: Check out our fully working [demo notebook](notebooks/demo.ipynb) to train a classifier on pre-extracted features from the KITS 23 dataset!
+
 ### Generate train/test split
 ```python
 from cyst_classifier.data_utils import generate_train_test_split
