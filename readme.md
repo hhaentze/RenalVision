@@ -1,13 +1,23 @@
-# Cyst vs Tumor Classifier
+<h2 align="center"> Renal Vision </h2> 
+<h3 align="center"> Explainable Cyst vs Tumor Classification </h4> 
 
-A radiomics-based classifier for distinguishing cysts from solid tumors in CT scans.
+<div align="center">
+<!-- <a href="https://github.com/hhaentze/CystClassifier/actions"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yml/badge.svg"></a> -->
+<a href="https://github.com/hhaentze/CystClassifier/master/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>  
+<a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+</div>
+
+![Sample Image](images/classification_tree.png)
+
 
 ## Installation
 
 ```bash
 pip install -e .
-```
 
+# for development
+make install-dev
+```
 ## Usage
 
 ### Generate train/test split
@@ -24,38 +34,47 @@ df.iloc[test_idx].to_csv("test.csv", index=False)
 ### Pre-extract features (RECOMMENDED for fast experimentation)
 ```bash
 # Extract features once (slow)
-python -m cyst_classifier.extract_features_script --data train.csv --output features_train.csv
-python -m cyst_classifier.extract_features_script --data test.csv --output features_test.csv
+python -m cyst_classifier.extract_features --data train.csv --output features_train.csv
+python -m cyst_classifier.extract_features --data test.csv --output features_test.csv
 
 # Train on cached features (fast - seconds instead of hours!)
-python -m cyst_classifier.main train --data features_train.csv --model logistic --output model.pkl
+cyst_classifier train --data features_train.csv --model logistic --output-dir results --explain
 
 # Evaluate on cached features (fast)
-python -m cyst_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
+cyst_classifier eval --data features_test.csv --model results/model.pkl --output-dir results --explain
 ```
 
 ### Train a model (direct from images - slower)
 ```bash
-python -m cyst_classifier.main train --data train.csv --model logistic --output model.pkl
+cyst_classifier train --data train.csv --model logistic --output-dir results
 ```
 
 ### Inference on single lesion
 ```bash
-python -m cyst_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl
+cyst_classifier infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl
 ```
 
 ### Inference on multi-lesion scan
 ```bash
-python -m cyst_classifier.main infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl --multi-lesion --output result.nii.gz
+cyst_classifier infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl --multi-lesion --output result.nii.gz
 ```
 
 ### Evaluate model
 ```bash
 # From cached features (fast)
-python -m cyst_classifier.main eval --data features_test.csv --model model.pkl --output-dir results/
+cyst_classifier eval --data features_test.csv --model model.pkl --output-dir results/
 
 # Or directly from images (slower)
-python -m cyst_classifier.main eval --data test.csv --model model.pkl --output-dir results/
+cyst_classifier eval --data test.csv --model model.pkl --output-dir results/
+
+# With uncertainty handling
+cyst_classifier eval --data test.csv --model model.pkl --output-dir results/ --uncertainty-threshold 0.75
+
+# Find optimal uncertainty threshold (validation set)
+cyst_classifier eval --data val.csv --model model.pkl --output-dir results/ --find-threshold
+
+# With explanations (includes uncertainty-aware explanations if threshold > 0.5)
+cyst_classifier eval --data test.csv --model model.pkl --output-dir results/ --uncertainty-threshold 0.75 --explain
 ```
 
 ## Performance Tips
@@ -88,3 +107,19 @@ The classifier uses the following radiomics features:
 - Mean gradient magnitude (edge characteristics)
 - Sphericity (shape regularity)
 - Fraction of voxels < 20 HU (fluid detection)
+
+## Models
+
+The following models are implemented at the moment.
+- Logistic Regression `--model logistic`
+- Shallow Tree `--model tree`
+
+
+## Explainability
+
+Running `cyst_classifier train` automatically creates an explainability folder inside the specified directory. Check it out to see which features were espacially important. If you set the `--explain` a comprehensive overview will be printed as well.
+Neat: if you combine `--uncertainty-threshold X` and `--explain` during evaluation a new updated explainability section that takes uncertainty into account will be created!
+
+
+![Sample Image 2](images/explainability.png)
+
