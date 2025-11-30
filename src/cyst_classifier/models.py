@@ -44,7 +44,7 @@ def train_model(
     X: np.ndarray,
     y: np.ndarray,
     model_type: str = "logistic",
-    feature_names: List[str] = None,
+    feature_names: List[str] | None = None,
     tree_max_depth: int = 5,
     apply_log_transform: bool = True,
 ) -> ModelBundle:

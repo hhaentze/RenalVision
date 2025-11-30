@@ -17,7 +17,7 @@ from sklearn.metrics import (
 
 
 def compute_metrics(
-    y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray = None
+    y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray | None = None
 ) -> Dict[str, float]:
     """
     Compute classification metrics.
@@ -73,7 +73,7 @@ def compute_metrics(
     }
 
 
-def plot_roc_curve(y_true: np.ndarray, y_proba: np.ndarray, output_path: str = None):
+def plot_roc_curve(y_true: np.ndarray, y_proba: np.ndarray, output_path: str | None = None):
     """
     Plot ROC curve.
 
@@ -111,7 +111,7 @@ def plot_roc_curve(y_true: np.ndarray, y_proba: np.ndarray, output_path: str = N
     plt.close()
 
 
-def plot_confusion_matrix(cm: np.ndarray, output_path: str = None):
+def plot_confusion_matrix(cm: np.ndarray, output_path: str | None = None):
     """
     Plot confusion matrix.
 
@@ -121,7 +121,7 @@ def plot_confusion_matrix(cm: np.ndarray, output_path: str = None):
     """
     fig, ax = plt.subplots(figsize=(6, 5))
 
-    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
     ax.figure.colorbar(im, ax=ax)
 
     # Labels
@@ -161,7 +161,7 @@ def plot_confusion_matrix(cm: np.ndarray, output_path: str = None):
     plt.close()
 
 
-def print_metrics_report(metrics: Dict[str, float], exclude_unsure: bool = False):
+def print_metrics_report(metrics: Dict[str, float | np.ndarray], exclude_unsure: bool = False):
     """
     Print formatted metrics report.
 
@@ -194,16 +194,16 @@ def print_metrics_report(metrics: Dict[str, float], exclude_unsure: bool = False
     print("\nConfusion Matrix (certain predictions only):")
     print("                Predicted")
     print("              Tumor  Cyst")
-    print(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}")
-    print(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}")
+    print(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}")  # type: ignore[index]
+    print(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}")  # type: ignore[index]
 
     if exclude_unsure and "confusion_matrix_with_unsure" in metrics:
         cm_full = metrics["confusion_matrix_with_unsure"]
         print("\nFull Confusion Matrix (including unsure):")
         print("                     Predicted")
         print("              Tumor  Cyst  Unsure")
-        print(f"True Tumor    {cm_full[0, 0]:5d}  {cm_full[0, 1]:5d}   {cm_full[0, 2]:5d}")
-        print(f"     Cyst     {cm_full[1, 0]:5d}  {cm_full[1, 1]:5d}   {cm_full[1, 2]:5d}")
+        print(f"True Tumor    {cm_full[0, 0]:5d}  {cm_full[0, 1]:5d}   {cm_full[0, 2]:5d}")  # type: ignore[index]
+        print(f"     Cyst     {cm_full[1, 0]:5d}  {cm_full[1, 1]:5d}   {cm_full[1, 2]:5d}")  # type: ignore[index]
 
     print()
 
@@ -274,7 +274,7 @@ def apply_uncertainty_threshold(
 
 
 def compute_metrics_with_uncertainty(
-    y_true: np.ndarray, y_pred_with_unsure: np.ndarray, y_proba: np.ndarray = None
+    y_true: np.ndarray, y_pred_with_unsure: np.ndarray, y_proba: np.ndarray | None = None
 ) -> Dict[str, float]:
     """
     Compute metrics excluding uncertain predictions.
@@ -353,7 +353,7 @@ def compute_metrics_with_uncertainty(
 
 
 def find_uncertainty_thresholds(
-    y_true: np.ndarray, y_proba: np.ndarray, output_dir: str = None
+    y_true: np.ndarray, y_proba: np.ndarray, output_dir: str | None = None
 ) -> pd.DataFrame:
     """
     Analyze performance across different uncertainty thresholds.
@@ -370,7 +370,7 @@ def find_uncertainty_thresholds(
     results = []
 
     for threshold in thresholds:
-        y_pred_with_unsure, _ = apply_uncertainty_threshold(y_proba, threshold)
+        y_pred_with_unsure, _ = apply_uncertainty_threshold(y_proba, float(threshold))
         metrics = compute_metrics_with_uncertainty(y_true, y_pred_with_unsure, y_proba)
 
         results.append(
@@ -389,15 +389,17 @@ def find_uncertainty_thresholds(
 
     # Save and plot if output_dir provided
     if output_dir:
-        output_dir = Path(output_dir)
+        output_path = Path(output_dir)
 
         # Save table
-        df.to_csv(output_dir / "threshold_analysis.txt", index=False, sep="\t", float_format="%.4f")
+        df.to_csv(
+            output_path / "threshold_analysis.txt", index=False, sep="\t", float_format="%.4f"
+        )
 
         # Plot trade-off
-        plot_threshold_tradeoff(df, output_dir / "threshold_tradeoff.png")
+        plot_threshold_tradeoff(df, str(output_path / "threshold_tradeoff.png"))
 
-        print(f"\nThreshold analysis saved to {output_dir}")
+        print(f"\nThreshold analysis saved to {output_path}")
 
     return df
 
@@ -432,7 +434,7 @@ def plot_threshold_tradeoff(df: pd.DataFrame, output_path: str):
 
 
 def plot_confusion_matrix_with_unsure(
-    cm: np.ndarray, output_path: str = None, include_unsure: bool = True
+    cm: np.ndarray, output_path: str | None = None, include_unsure: bool = True
 ):
     """
     Plot confusion matrix with optional unsure class.
@@ -447,11 +449,11 @@ def plot_confusion_matrix_with_unsure(
     # Determine labels
     if include_unsure and cm.shape[0] == 3:
         classes = ["Tumor", "Cyst", "Unsure"]
-        cmap = plt.cm.Blues
+        cmap = "Blues"
     else:
         classes = ["Tumor", "Cyst"]
         cm = cm[:2, :2]  # Use only 2x2 portion
-        cmap = plt.cm.Blues
+        cmap = "Blues"
 
     im = ax.imshow(cm, interpolation="nearest", cmap=cmap)
     ax.figure.colorbar(im, ax=ax)

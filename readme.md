@@ -1,9 +1,9 @@
-<h2 align="center"> Renal Vision </h2> 
-<h3 align="center"> Explainable Cyst vs Tumor Classification </h4> 
+<h2 align="center"> Renal Vision </h2>
+<h3 align="center"> Explainable Cyst vs Tumor Classification </h4>
 
 <div align="center">
 <!-- <a href="https://github.com/hhaentze/CystClassifier/actions"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yml/badge.svg"></a> -->
-<a href="https://github.com/hhaentze/CystClassifier/master/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>  
+<a href="https://github.com/hhaentze/CystClassifier/master/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </div>
 
@@ -125,3 +125,23 @@ Neat: if you combine `--uncertainty-threshold X` and `--explain` during evaluati
 
 ![Sample Image 2](images/explainability.png)
 
+## How to Contribute
+
+To mantain hiqh quality code please adhere to our coding guidelines. You can run the full Continuous Integration pipeline locally. This ensures your code is clean, typed correctly, and fully tested.
+
+  * **Run All Checks:**
+
+    ```bash
+    make ci
+    ```
+
+    This single command executes the workflow in the following order: **Linting** (Ruff/Black) $\rightarrow$ **Type Checking** (Mypy) $\rightarrow$ **Unit Tests & Coverage** (Pytest).
+
+  * **Fix Code Style Automatically:**
+    If the `make ci` command reports style or formatting errors, you can fix them instantly using:
+
+    ```bash
+    make format
+    ```
+
+Once your code is formatted correctly and passes `make ci` locally, push your changes and open a Pull Request. Our GitHub Actions pipeline will mirror your local `make ci` run and upload a final test coverage report.

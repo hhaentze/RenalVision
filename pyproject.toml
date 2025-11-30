@@ -33,32 +33,58 @@ dev = [
     "mypy",           # static typechecks
     "nbqa",           # Tool to run linters on notebooks
     "ipykernel",
+    "pytest",
+    "pytest-cov",
+    "types-tqdm",     # (stubs for mypy)
+    "pre-commit",
 ]
 
 [project.scripts]
 cyst-classifier = "cyst_classifier.main:main"
 
-############### Linting ###############
+############### Linting & Formatting ###############
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+src = ["src"]
 exclude = [".git", ".ruff_cache", "__pycache__", "build", "dist", "*.egg-info"]
 
 [tool.ruff.lint]
-extend-select = ["I"]     # enable import sorting
-ignore = ["E501", "E741"] # ignore line-length, ambitious variable names
+extend-select = ["I"]
+ignore = ["E501", "E741"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cyst_classifier"]
 
 [tool.ruff.lint.per-file-ignores]
-"*.ipynb" = [
-    "F841",    # unused variable - common in exploration
-    "E402",    # module level import not at top - common in notebooks
-    "PLR0913", # too many arguments - common in notebook prototyping
-]
+"*.ipynb" = ["F841", "E402", "PLR0913"]
 
 [tool.black]
 line-length = 100
 target-version = ["py311"]
+
+############### Type Checking ###############
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true # Crucial for ML libs (torch, monai) lacking stubs
+disable_error_code = ["no-any-return"] # Dangerous! By disabling this we open the door for type leaks. However, maintaining this rule is challenging.
+
+############### Testing & Coverage ###############
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--verbose"
+
+[tool.coverage.run]
+branch = true
+source = ["cyst_classifier"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 0     # CI fails if coverage is below 0%
