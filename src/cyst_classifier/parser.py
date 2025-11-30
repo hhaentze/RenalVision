@@ -133,8 +133,5 @@ def validate_args(args):
     if args.mode == "infer" and args.multi_lesion and args.output is None:
         raise ValueError("--output is required when using --multi-lesion")
 
-    if args.mode == "train":
-        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-
-    if args.mode == "eval":
+    if args.mode in ["train", "eval"]:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
