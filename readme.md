@@ -2,7 +2,7 @@
 <h3 align="center"> Explainable Cyst vs Tumor Classification </h4>
 
 <div align="center">
-<!-- <a href="https://github.com/hhaentze/CystClassifier/actions"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yml/badge.svg"></a> -->
+<a href="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml/badge.svg"></a>
 <a href="https://github.com/hhaentze/CystClassifier/master/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </div>
