@@ -1,16 +1,109 @@
 """Preprocessing functions for CT images and segmentations."""
 
 import warnings
+from pathlib import Path
+from typing import Dict, Tuple
 
 import numpy as np
+import torch
+from monai.data import MetaTensor
 from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
     LoadImaged,
+    MapLabelValued,
     Spacingd,
 )
 from scipy import ndimage
+
+
+class CTPreprocessor:
+    """Handle loading and preprocessing of CT images and segmentations for both file paths and numpy arrays."""
+
+    def __init__(
+        self,
+        target_spacing: Tuple[float, float, float] = (2.0, 2.0, 2.0),
+        window_center: float = 40,
+        window_width: float = 400,
+        label_map: Dict[int, int] = {0: 0},
+    ):
+        self.target_spacing = target_spacing
+        self.window_center = window_center
+        self.window_width = window_width
+        self.label_map = label_map
+
+        # Define the shared pipeline (Transforms that apply to BOTH files and arrays)
+        self.transforms = Compose(
+            [
+                EnsureChannelFirstd(keys=["image", "seg"], channel_dim="no_channel"),
+                Spacingd(
+                    keys=["image", "seg"], pixdim=self.target_spacing, mode=("bilinear", "nearest")
+                ),
+                EnsureTyped(keys=["image", "seg"]),
+                MapLabelValued(
+                    keys=["seg"],
+                    orig_labels=list(label_map.keys()),
+                    target_labels=list(label_map.values()),
+                    dtype=np.int16,
+                ),
+            ]
+        )
+
+    def _finalize_result(self, data: Dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Internal shared method to extract arrays, window, and return.
+        """
+        # 1. Extract
+        # .array converts MetaTensor back to pure numpy
+        image = data["image"].array.squeeze()
+        seg = data["seg"].array.squeeze().astype(np.int32)
+
+        # Get the new affine from the MetaTensor (it was updated by Spacingd)
+        new_affine = data["image"].affine.numpy()
+
+        # 2. Validate
+        validate_hu_range(image)
+
+        # 3. Windowing (Shared logic)
+        win_min = self.window_center - self.window_width / 2
+        win_max = self.window_center + self.window_width / 2
+        image = np.clip(image, win_min, win_max)
+
+        return image, seg, new_affine
+
+    def process_files(
+        self, image_path: str | Path, seg_path: str | Path
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Entry point for File Paths.
+        """
+        # Load files specifically
+        loader = LoadImaged(keys=["image", "seg"], image_only=False)
+        data = loader({"image": image_path, "seg": seg_path})
+
+        # Pass to shared transforms
+        data = self.transforms(data)
+
+        return self._finalize_result(data)
+
+    def process_arrays(
+        self, image_arr: np.ndarray, seg_arr: np.ndarray, original_affine: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Entry point for Numpy Arrays.
+        """
+        # Wrap numpy in MetaTensor to "fake" a loaded file
+        # This injects the metadata required for Spacingd to work
+        data = {
+            "image": MetaTensor(torch.tensor(image_arr), affine=torch.tensor(original_affine)),
+            "seg": MetaTensor(torch.tensor(seg_arr), affine=torch.tensor(original_affine)),
+        }
+
+        # Pass to shared transforms
+        data = self.transforms(data)
+
+        return self._finalize_result(data)
 
 
 def validate_hu_range(image):
@@ -31,78 +124,13 @@ def validate_hu_range(image):
         )
 
 
-def load_and_preprocess(
-    image_path,
-    seg_path,
-    target_spacing=(2.0, 2.0, 2.0),
-    window_center=40,
-    window_width=400,
-    map_labels=True,
-):
-    """
-    Load and preprocess CT image and segmentation.
-
-    Preprocessing steps:
-    1. Load image and segmentation
-    2. Validate HU range
-    3. Resample to target spacing (2mm isotropic)
-    4. Window CT to [center-width/2, center+width/2] = [-160, 240] HU (clipped)
-    5. Map segmentation labels: (1,2,3) -> (0,1,1) if map_labels=True
-    6. Set kidney voxels (label=1 in original) to 0 in segmentation
-
-    Args:
-        image_path: Path to CT image (.nii.gz)
-        seg_path: Path to segmentation (.nii.gz)
-        target_spacing: Target voxel spacing in mm (default: 2mm isotropic)
-        window_center: CT window center in HU (default: 40)
-        window_width: CT window width in HU (default: 400)
-        map_labels: If True, map (1,2,3) to (0,1,1) (default: True)
-
-    Returns:
-        image: Preprocessed CT image (numpy array, in HU within window)
-        seg: Preprocessed segmentation (numpy array)
-        affine: Affine transformation matrix
-
-    Raises:
-        ValueError: If image is not in HU range or no lesions found
-    """
-    # Load images using MONAI
-    transforms = Compose(
-        [
-            LoadImaged(keys=["image", "seg"], image_only=False),
-            EnsureChannelFirstd(keys=["image", "seg"]),
-            Spacingd(keys=["image", "seg"], pixdim=target_spacing, mode=("bilinear", "nearest")),
-            EnsureTyped(keys=["image", "seg"]),
-        ]
-    )
-
-    data = transforms({"image": image_path, "seg": seg_path})
-
-    # Extract numpy arrays
-    image = data["image"].squeeze().cpu().numpy()
-    seg = data["seg"].squeeze().cpu().numpy().astype(np.int32)
-    affine = data["image"].meta["affine"]
-
-    # Validate HU range
-    validate_hu_range(image)
-
-    # Apply CT windowing: clip to [center - width/2, center + width/2]
-    window_min = window_center - window_width / 2  # -160 HU
-    window_max = window_center + window_width / 2  # 240 HU
-    image = np.clip(image, window_min, window_max)
-
-    # Map labels if requested
-    if map_labels:
-        # Map: 1 (kidney) -> 0, 2 (tumor) -> 1, 3 (cyst) -> 1
-        seg_mapped = np.zeros_like(seg)
-        seg_mapped[seg == 2] = 1  # tumor
-        seg_mapped[seg == 3] = 1  # cyst
-        seg = seg_mapped
-    else:
-        # Still remove kidney label
-        seg[seg == 1] = 0
-
-    return image, seg, affine
+def create_affine_from_spacing(spacing: Tuple[float, float, float]) -> np.ndarray:
+    """Creates a diagonal 4x4 affine matrix from spacing."""
+    affine = np.eye(4)
+    affine[0, 0] = spacing[0]
+    affine[1, 1] = spacing[1]
+    affine[2, 2] = spacing[2]
+    return affine
 
 
 def extract_lesions(image, seg, min_voxels=10, exclude_border=True):

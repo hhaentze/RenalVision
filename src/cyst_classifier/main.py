@@ -3,7 +3,6 @@
 import sys
 from pathlib import Path
 
-import nibabel as nib
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -14,15 +13,15 @@ from .explainability import (
     explain_with_uncertainty,
 )
 from .features import Feature, extract_features
+from .inference import Predictor
 from .models import ModelBundle, compute_feature_correlations, predict, predict_proba, train_model
 from .parser import create_parser, validate_args
-from .preprocessing import extract_lesions, load_and_preprocess
+from .preprocessing import CTPreprocessor, extract_lesions
 from .utils import (
     apply_uncertainty_threshold,
     compute_metrics,
     compute_metrics_with_uncertainty,
     find_uncertainty_thresholds,
-    get_all_lesion_components,
     plot_confusion_matrix,
     plot_confusion_matrix_with_unsure,
     plot_roc_curve,
@@ -124,13 +123,13 @@ def train_mode(args):
         all_labels = []
 
         print("\nExtracting features from lesions...")
+        preprocessor = CTPreprocessor()
         for idx, row in tqdm(df.iterrows(), total=len(df)):
             try:
                 # Load and preprocess
-                image, seg, _ = load_and_preprocess(
+                image, seg, _ = preprocessor.process_files(
                     row["image_path"],
                     row["seg_path"],
-                    map_labels=False,  # Keep original labels for training
                 )
 
                 # Extract individual lesions
@@ -223,103 +222,39 @@ def infer_mode(args):
     Note: Inference always requires actual images (not feature CSV).
     """
     print(f"Loading model from {args.model}...")
-    model_bundle = ModelBundle.load(args.model)
-
-    print("Loading image and segmentation...")
-    image, seg, affine = load_and_preprocess(
-        args.image, args.seg, map_labels=not args.no_label_mapping
-    )
-
-    # Get feature list from model
-    feature_list = [Feature(fname) for fname in model_bundle.feature_names]
+    predictor = Predictor(args.model)
 
     if args.multi_lesion:
         # Process all lesions
         print("Processing multiple lesions...")
 
-        try:
-            lesions = extract_lesions(image, seg, min_voxels=args.min_voxels)
-        except ValueError as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-
-        print(f"Found {len(lesions)} valid lesions")
-
-        # Get labeled components
-        labeled_seg, num_components = get_all_lesion_components(seg)
-
-        # Create output segmentation (0=background, 2=tumor, 3=cyst, 4=unsure)
-        output_seg = np.zeros_like(seg)
-
-        component_id = 1
-        for lesion_img, lesion_mask, _ in lesions:
-            # Extract features
-            features = extract_features(lesion_img, lesion_mask, feature_list)
-            feature_vector = np.array([[features[f.value] for f in feature_list]])
-
-            # Get probabilities
-            pred_proba = predict_proba(model_bundle, feature_vector)[0]
-
-            # Apply uncertainty threshold
-            pred_with_unsure, max_prob = apply_uncertainty_threshold(
-                pred_proba.reshape(1, -1), args.uncertainty_threshold
-            )
-            pred_class = pred_with_unsure[0]
-
-            # Map prediction to output label (0->2, 1->3, 2->4)
-            if pred_class == 2:  # Unsure
-                output_label = 4
-            elif pred_class == 0:  # Tumor
-                output_label = 2
-            else:  # Cyst
-                output_label = 3
-
-            # Update output segmentation for this component
-            output_seg[labeled_seg == component_id] = output_label
-            component_id += 1
-
-        # Save output
-        output_nii = nib.Nifti1Image(output_seg, affine)
-        nib.save(output_nii, args.output)
-        print(f"Results saved to {args.output}")
+        predictor.infer_mask(
+            image=args.image,
+            seg=args.seg,
+            certainty_threshold=args.uncertainty_threshold,
+            output=args.output,
+        )
 
     else:
         # Single lesion mode
-        try:
-            lesions = extract_lesions(image, seg, min_voxels=args.min_voxels)
-        except ValueError as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-
-        if len(lesions) > 1:
-            print(f"Warning: Found {len(lesions)} lesions, using the first one")
-
-        # Use first lesion
-        lesion_img, lesion_mask, _ = lesions[0]
-
-        # Extract features
-        features = extract_features(lesion_img, lesion_mask, feature_list)
-        feature_vector = np.array([[features[f.value] for f in feature_list]])
-
-        # Get probabilities
-        pred_proba = predict_proba(model_bundle, feature_vector)[0]
-
-        # Apply uncertainty threshold
-        pred_with_unsure, max_prob = apply_uncertainty_threshold(
-            pred_proba.reshape(1, -1), args.uncertainty_threshold
+        print("Processing single lesion...")
+        prediction = predictor.infer_lesion(
+            image=args.image,
+            seg=args.seg,
+            certainty_threshold=args.uncertainty_threshold,
         )
-        pred_class = pred_with_unsure[0]
 
         # Print result
-        if pred_class == 2:
+        if prediction == -1:
             class_name = "Unsure"
-        elif pred_class == 0:
+        elif prediction == 0:
             class_name = "Tumor"
-        else:
+        elif prediction == 1:
             class_name = "Cyst"
+        else:
+            raise ValueError(f"Unknown predicted class: {prediction}")
 
         print(f"\nPrediction: {class_name}")
-        print(f"Confidence: Tumor={pred_proba[0]:.3f}, Cyst={pred_proba[1]:.3f}")
 
 
 def eval_mode(args):
@@ -367,13 +302,13 @@ def eval_mode(args):
         all_probabilities = []
 
         print("\nRunning inference on test set...")
+        preprocessor = CTPreprocessor()
         for idx, row in tqdm(df.iterrows(), total=len(df)):
             try:
                 # Load and preprocess
-                image, seg, _ = load_and_preprocess(
+                image, seg, _ = preprocessor.process_files(
                     row["image_path"],
                     row["seg_path"],
-                    map_labels=False,  # Keep original labels
                 )
 
                 # Extract lesions

@@ -9,7 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from .features import Feature, extract_features
-from .preprocessing import extract_lesions, load_and_preprocess
+from .preprocessing import CTPreprocessor, extract_lesions
 
 
 def create_extraction_parser():
@@ -73,10 +73,10 @@ def extract_and_cache_features(data_csv, output_csv, min_voxels=10, feature_list
 
         try:
             # Load and preprocess
-            image, seg, _ = load_and_preprocess(
+            preprocessor = CTPreprocessor()
+            image, seg, _ = preprocessor.process_files(
                 row["image_path"],
                 row["seg_path"],
-                map_labels=False,  # Keep original labels (2, 3)
             )
 
             # Extract individual lesions

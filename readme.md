@@ -18,6 +18,67 @@ pip install -e .
 # for development
 make install-dev
 ```
+
+## Python API
+You can use CystClassifier's [Predictor](src/cyst_classifier/inference.py) class to classify a single lesion or to update an entire map of segmentations. Input can be either numpy arrays or the paths to files.
+
+```python
+from cyst_classifier.inference import Predictor
+
+# Initialize model
+predictor = Predictor(model_path = "model.pkl")
+
+# Predict a single lesion
+prediction = predictor.infer_lesion(image_path, seg_path)
+
+if prediction == -1:
+    class_name = "Unsure"
+elif prediction == 0:
+    class_name = "Tumor"
+elif prediction == 1:
+    class_name = "Cyst"
+print(f"\nPrediction: {class_name}")
+
+# Predict all lesions in a mask and save mask
+_ , prediction_mask, _ = predictor.infer_mask(image_path, seg_path, output="mask.nii.gz")
+```
+
+### Predict directly from images
+``` python
+import SimpleITK as sitk
+
+from cyst_classifier.inference import Predictor
+from cyst_classifier.preprocessing import create_affine_from_spacing
+
+sitk_img = sitk.ReadImage("scan.nii.gz")
+sitk_seg = sitk.ReadImage("mask.nii.gz")
+
+# 1. Get Arrays (SimpleITK is usually (z, y, x), verify your axis order!)
+image_np = sitk.GetArrayFromImage(sitk_img) # Returns (Z, Y, X)
+seg_np = sitk.GetArrayFromImage(sitk_seg)
+
+# 2. Get Affine
+original_spacing = sitk_img.GetSpacing()
+affine_np = create_affine_from_spacing(original_spacing)
+
+# 3. (Optional) Define a custom class mapping
+# We expect the classes 0:background and 1:abnormality as input.
+# However, segmentations in KiTS23, for example, have the labels 0:background, 1:kidney, 2:tumor, 3:cyst
+label_map={
+  1:0,  # ignore kidneys
+  2:1,  # abnormality
+  3:1   # abnormality
+}
+
+# Predict
+predictor = Predictor(model_path = "model.pkl") # only works for single lesions
+prediction = predictor.infer_lesion(image_np, seg_np, affine_np, label_map=label_map)
+_ , prediction_mask, _ = predictor.infer_mask(image_np, seg_np, affine_np, label_map = label_map)
+```
+
+
+
+
 ## Usage
 
 TLDR: Check out our fully working [demo notebook](notebooks/demo.ipynb) to train a classifier on pre-extracted features from the KITS 23 dataset!
