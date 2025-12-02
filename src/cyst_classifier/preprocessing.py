@@ -2,7 +2,7 @@
 
 import warnings
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -109,14 +109,8 @@ class CTPreprocessor:
 def validate_hu_range(image):
     """
     Validate that image values are in valid Hounsfield Unit range.
-
-    Args:
-        image: numpy array with intensity values
-
-    Raises:
-        ValueError: If values are outside valid HU range [-2048, 3071]
     """
-    min_val, max_val = image.min(), image.max()
+    min_val, max_val = float(image.min()), float(image.max())
     if min_val < -2048 or max_val > 3071:
         raise ValueError(
             f"Image values [{min_val:.1f}, {max_val:.1f}] outside valid HU range "
@@ -133,27 +127,11 @@ def create_affine_from_spacing(spacing: Tuple[float, float, float]) -> np.ndarra
     return affine
 
 
-def extract_lesions(image, seg, min_voxels=10, exclude_border=True):
+def extract_lesions(
+    image: np.ndarray, seg: np.ndarray, min_voxels: int = 10, exclude_border: bool = True
+) -> List[Tuple[np.ndarray, np.ndarray, int]]:
     """
     Extract individual lesions from segmentation as separate samples.
-
-    Uses connected component analysis to identify individual lesions.
-    Each lesion is returned as a separate masked region.
-
-    Args:
-        image: CT image (numpy array)
-        seg: Segmentation mask (numpy array, non-zero = lesion)
-        min_voxels: Minimum lesion size in voxels (default: 10)
-        exclude_border: If True, exclude lesions touching image boundaries (default: True)
-
-    Returns:
-        lesions: List of tuples (lesion_image, lesion_mask, label)
-                 - lesion_image: Full image (for context)
-                 - lesion_mask: Binary mask for this specific lesion
-                 - label: Original label value (2=tumor, 3=cyst) or 1 if mapped
-
-    Raises:
-        ValueError: If no lesions found
     """
     # Find connected components
     labeled_seg, num_lesions = ndimage.label(seg > 0)
@@ -161,7 +139,7 @@ def extract_lesions(image, seg, min_voxels=10, exclude_border=True):
     if num_lesions == 0:
         raise ValueError("No lesions found in segmentation")
 
-    lesions = []
+    lesions: List[Tuple[np.ndarray, np.ndarray, int]] = []
 
     for lesion_id in range(1, num_lesions + 1):
         lesion_mask = labeled_seg == lesion_id
@@ -180,7 +158,6 @@ def extract_lesions(image, seg, min_voxels=10, exclude_border=True):
                 continue
 
         # Get original label (for ground truth)
-        # Take the most common non-zero label within this lesion
         original_labels = seg[lesion_mask]
         label = np.bincount(original_labels[original_labels > 0]).argmax()
 
@@ -192,17 +169,11 @@ def extract_lesions(image, seg, min_voxels=10, exclude_border=True):
     return lesions
 
 
-def touches_border(mask):
+def touches_border(mask: np.ndarray) -> bool:
     """
     Check if a binary mask touches the image boundary.
-
-    Args:
-        mask: Binary mask (numpy array)
-
-    Returns:
-        bool: True if mask touches any face of the 3D volume
     """
-    return (
+    return bool(
         np.any(mask[0, :, :])
         or np.any(mask[-1, :, :])
         or np.any(mask[:, 0, :])
