@@ -48,9 +48,6 @@ def compute_metrics(
 
     # Classification Report
     # We generate both dict (for programmatic access) and string (for printing)
-
-    print("DEBUG1:", np.unique(y_true))
-    print("DEBUG2:", np.unique(y_pred))
     report_dict = classification_report(
         y_true,
         y_pred,
