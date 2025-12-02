@@ -1,7 +1,9 @@
 """Main entry point for Cyst classifier."""
 
-import sys
+import json
+import warnings
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -10,205 +12,230 @@ from tqdm import tqdm
 from .explainability import (
     explain_decision_tree,
     explain_logistic_regression,
-    explain_with_uncertainty,
 )
 from .features import Feature, extract_features
 from .inference import Predictor
-from .models import ModelBundle, compute_feature_correlations, predict, predict_proba, train_model
+from .models import ModelBundle, predict_proba, train_model
 from .parser import create_parser, validate_args
 from .preprocessing import CTPreprocessor, extract_lesions
 from .utils import (
     apply_uncertainty_threshold,
     compute_metrics,
     compute_metrics_with_uncertainty,
-    find_uncertainty_thresholds,
     plot_confusion_matrix,
-    plot_confusion_matrix_with_unsure,
-    plot_roc_curve,
+    plot_multiclass_roc,
     print_metrics_report,
 )
 
 
-def is_feature_csv(df):
+def load_label_map_and_names(json_path: Optional[str]) -> Tuple[Dict[int, int], Dict[int, str]]:
     """
-    Check if CSV contains pre-extracted features or raw image paths.
+    Load label mapping and optional class names from JSON file.
 
-    Args:
-        df: pandas DataFrame
-
-    Returns:
-        bool: True if CSV contains features, False if it contains image paths
+    Supported formats:
+    1. Flat map: {"0": 0, "1": 1}
+    2. Structured: {
+         "map": {"2": 0, "3": 1},
+         "names": {"0": "Tumor", "1": "Cyst"}
+       }
     """
-    # Feature CSV has: case, lesion_id, label, volume_voxels, and feature columns
-    # Image CSV has: seg_path, image_path
+    if not json_path:
+        return {}, {}
 
-    has_image_paths = "image_path" in df.columns and "seg_path" in df.columns
-    has_features = "label" in df.columns and "case" in df.columns
+    path = Path(json_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Label map file not found: {json_path}")
 
-    # Check for at least some feature columns
-    feature_cols = ["mean_hu", "std_hu"]
-    has_feature_cols = all(col in df.columns for col in feature_cols)
+    with open(path, "r") as f:
+        data = json.load(f)
 
-    if has_features and has_feature_cols:
-        return True
-    elif has_image_paths:
-        return False
+    # Check if structured
+    if "map" in data or "names" in data:
+        mapping = {int(k): int(v) for k, v in data.get("map", {}).items()}
+        names = {int(k): str(v) for k, v in data.get("names", {}).items()}
+        return mapping, names
     else:
-        raise ValueError(
-            "Unrecognized CSV format. Expected either:\n"
-            "  - Image CSV: columns 'image_path', 'seg_path'\n"
-            "  - Feature CSV: columns 'case', 'lesion_id', 'label', and feature columns"
-        )
+        # Fallback to simple flat map
+        return {int(k): int(v) for k, v in data.items()}, {}
 
 
-def load_feature_data(df, feature_names):
-    """
-    Load pre-extracted features from CSV.
+def is_feature_csv(df: pd.DataFrame) -> bool:
+    """Check if CSV contains pre-extracted features."""
+    feature_cols = ["mean_hu", "std_hu"]
+    has_features = all(col in df.columns for col in feature_cols)
+    has_metadata = "label" in df.columns
+    return has_features and has_metadata
 
-    Args:
-        df: Feature DataFrame
-        feature_names: List of feature column names to extract
 
-    Returns:
-        X: Feature matrix (n_samples, n_features)
-        y: Labels (n_samples,)
-    """
-    # Check all requested features are present
-    missing_features = [f for f in feature_names if f not in df.columns]
-    if missing_features:
-        raise ValueError(f"Missing features in CSV: {missing_features}")
+def load_feature_data(df: pd.DataFrame, feature_names: List[str]) -> Tuple[np.ndarray, np.ndarray]:
+    """Load feature matrix X and label vector y."""
+    missing = [f for f in feature_names if f not in df.columns]
+    if missing:
+        raise ValueError(f"Missing features in CSV: {missing}")
 
     X = df[feature_names].values
-    y = df["label"].values
-
+    y = df["label"].values.astype(int)
     return X, y
 
 
-def train_mode(args):
-    """
-    Train a classifier on labeled data.
-
-    Supports two input formats:
-    1. Image CSV (seg_path, image_path) - extracts features on-the-fly
-    2. Feature CSV (pre-extracted features) - loads directly (much faster)
-    """
+def train_mode(args: Any) -> None:
+    """Execute training workflow."""
     print(f"Loading data from {args.data}...")
     df = pd.read_csv(args.data)
+    label_map, json_class_names = load_label_map_and_names(args.label_map)
 
-    # Determine which features to use
+    # Features
     if args.features:
         feature_list = [Feature[f.upper()] for f in args.features]
     else:
         feature_list = list(Feature)
-
     feature_names = [f.value for f in feature_list]
-    print(f"Using {len(feature_names)} features: {feature_names}")
 
-    # Auto-detect CSV format
+    X: np.ndarray
+    y: np.ndarray
+    n_classes: int
+    final_class_names: List[str] = []
+
+    # --- 1. Load Data & Determine Classes ---
     if is_feature_csv(df):
-        print("\n✓ Detected pre-extracted feature CSV (fast mode)")
+        print("\n✓ Detected pre-extracted feature CSV")
+
+        # Apply label map to feature CSV if provided
+        if label_map:
+            print("Applying label mapping to CSV labels...")
+            # We map the 'label' column. Any label not in map is left as is (or should we drop?)
+            # Assuming strictly mapped or identity if not present is risky.
+            # Usually strict mapping is better for cleaning.
+            # Here: if label in map, replace. Else keep.
+            df["label"] = df["label"].map(lambda x: label_map.get(x, x))
+
         X, y = load_feature_data(df, feature_names)
 
-        print("\nDataset summary:")
-        print(f"  Total lesions: {len(y)}")
-        print(f"  Tumors (label=2): {np.sum(y == 2)}")
-        print(f"  Cysts (label=3): {np.sum(y == 3)}")
+        # Validate Labels
+        unique_labels = sorted(np.unique(y))
+        if unique_labels != list(range(len(unique_labels))):
+            raise ValueError(
+                f"Invalid labels in CSV after mapping: {unique_labels}. "
+                "Labels must be contiguous integers starting at 0 (e.g. 0, 1, 2)."
+            )
+
+        n_classes = len(unique_labels)
+        print(f"Detected {n_classes} classes: {unique_labels}")
+
+        # Resolve Class Names
+        # Priority 1: JSON Names
+        if json_class_names:
+            print("Using class names from JSON.")
+            # Verify we have names for all classes
+            if not all(i in json_class_names for i in unique_labels):
+                warnings.warn(
+                    "JSON class names provided but missing some classes. Filling with defaults."
+                )
+            final_class_names = [json_class_names.get(i, f"Class {i}") for i in range(n_classes)]
+
+        # Priority 2: CSV 'class_name' column
+        elif "class_name" in df.columns:
+            print("Inferring class names from CSV...")
+            inferred_names = {}
+            for label in unique_labels:
+                # Get names associated with this (potentially new) label
+                names_for_label = df[df["label"] == label]["class_name"].unique()
+                if len(names_for_label) > 1:
+                    warnings.warn(
+                        f"Label {label} has multiple names in CSV: {names_for_label}. "
+                        f"This often happens when merging classes. Using '{names_for_label[0]}'. "
+                        "Please specify explicit class names in the label map JSON to avoid this."
+                    )
+                    inferred_names[label] = str(names_for_label[0])
+                elif len(names_for_label) == 1:
+                    inferred_names[label] = str(names_for_label[0])
+                else:
+                    inferred_names[label] = f"Class {label}"
+
+            final_class_names = [inferred_names[i] for i in range(n_classes)]
 
     else:
         print("\n⊙ Detected image path CSV (extracting features...)")
-        print("  Tip: Use extract_features_script.py to pre-extract features for faster training")
-
-        # Extract features from images (original slow path)
-        all_features = []
-        all_labels = []
-
-        print("\nExtracting features from lesions...")
-        preprocessor = CTPreprocessor()
-        for idx, row in tqdm(df.iterrows(), total=len(df)):
+        # NOTE: load_and_preprocess applies the label_map internally for images
+        all_features: List[List[float]] = []
+        all_labels: List[int] = []
+        preprocessor = CTPreprocessor(label_map=label_map)
+        for _, row in tqdm(df.iterrows(), total=len(df)):
             try:
-                # Load and preprocess
                 image, seg, _ = preprocessor.process_files(
                     row["image_path"],
                     row["seg_path"],
                 )
-
-                # Extract individual lesions
                 lesions = extract_lesions(image, seg, min_voxels=args.min_voxels)
 
-                # Compute features for each lesion
                 for lesion_img, lesion_mask, label in lesions:
-                    features = extract_features(lesion_img, lesion_mask, feature_list)
-
-                    # Convert to feature vector
-                    feature_vector = [features[f.value] for f in feature_list]
-                    all_features.append(feature_vector)
+                    feats = extract_features(lesion_img, lesion_mask, feature_list)
+                    all_features.append([float(feats[f.value]) for f in feature_list])
                     all_labels.append(label)
 
             except Exception as e:
-                print(f"\nWarning: Failed to process {row['image_path']}: {e}")
+                print(f"Warning: {e}")
                 continue
 
-        if len(all_features) == 0:
-            print("Error: No valid lesions found in dataset!")
-            sys.exit(1)
+        if not all_features:
+            raise ValueError("No valid lesions found in the dataset.")
 
-        # Convert to numpy arrays
         X = np.array(all_features)
         y = np.array(all_labels)
 
-        print("\nDataset summary:")
-        print(f"  Total lesions: {len(y)}")
-        print(f"  Tumors (label=2): {np.sum(y == 2)}")
-        print(f"  Cysts (label=3): {np.sum(y == 3)}")
+        # Recalculate n_classes based on actual data found after mapping
+        unique_found = sorted(np.unique(y))
+        if unique_found != list(range(len(unique_found))):
+            raise ValueError(f"Extracted labels are not contiguous starting at 0: {unique_found}")
 
-    # Compute and print feature correlations
-    print("\nComputing feature correlations...")
-    corr_info = compute_feature_correlations(X, feature_names)
+        n_classes = len(unique_found)
+        print(f"Extracted {n_classes} classes: {unique_found}")
 
-    if corr_info["high_correlations"]:
-        print("\nHighly correlated feature pairs (|r| > 0.85):")
-        for pair in corr_info["high_correlations"]:
-            print(f"  {pair['feature1']} <-> {pair['feature2']}: r = {pair['correlation']:.3f}")
-        print("\nConsider removing one feature from each highly correlated pair.")
-    else:
-        print("\nNo highly correlated features found.")
+        # Resolve names for image mode
+        if json_class_names:
+            final_class_names = [json_class_names.get(i, f"Class {i}") for i in range(n_classes)]
 
-    # Train model
-    print(f"\nTraining {args.model} model...")
+    # Priority 3: User args or Default
+    if not final_class_names:
+        if args.class_names:
+            if len(args.class_names) != n_classes:
+                raise ValueError(
+                    f"Provided {len(args.class_names)} class names via CLI, but found {n_classes} classes."
+                )
+            final_class_names = args.class_names
+        else:
+            final_class_names = [f"Class {i}" for i in range(n_classes)]
+
+    # --- 3. Train ---
+    print(f"\nTraining {args.model} for {n_classes} classes...")
+    print(f"Class mapping: {dict(enumerate(final_class_names))}")
+
     model_bundle = train_model(
         X,
         y,
         model_type=args.model,
+        n_classes=n_classes,
         feature_names=feature_names,
-        tree_max_depth=args.tree_depth if args.model == "tree" else 5,
+        class_names=final_class_names,
+        tree_max_depth=args.tree_depth,
     )
 
-    # Save model
-    output_dir = Path(args.output_dir)
-    model_path = output_dir / "model.pkl"
+    # --- 4. Save ---
+    output_path = Path(args.output_dir)
+    model_path = output_path / "model.pkl"
     model_bundle.save(model_path)
-    print(f"\nModel saved to {model_path}")
+    print(f"Model and metadata saved to {args.output_dir}")
 
-    # Generate explanations if requested
-    if args.explain:
-        explanation_dir = output_dir / "explanations"
-        print("\nGenerating model explanations...")
-
-        if model_bundle.model_type == "logistic":
-            explain_logistic_regression(
-                model_bundle, X, y, output_dir=explanation_dir, verbose=True
-            )
-        elif model_bundle.model_type == "tree":
+    # --- 5. Explain (Legacy support for binary) ---
+    if args.explain and n_classes == 2 and args.model in ["logistic", "tree"]:
+        print("\nGenerating explanations (Binary Legacy Mode)...")
+        explanation_dir = output_path / "explanations"
+        if args.model == "logistic":
+            explain_logistic_regression(model_bundle, X, y, output_dir=explanation_dir)
+        elif args.model == "tree":
             explain_decision_tree(
-                model_bundle, output_dir=explanation_dir, verbose=True, rule_format=args.rule_format
+                model_bundle, output_dir=explanation_dir, rule_format=args.rule_format
             )
-
-    # Print feature importance for tree
-    if args.model == "tree":
-        importances = model_bundle.model.feature_importances_
-        print("\nFeature importances:")
-        for fname, imp in sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True):
-            print(f"  {fname}: {imp:.4f}")
 
 
 def infer_mode(args):
@@ -257,234 +284,106 @@ def infer_mode(args):
         print(f"\nPrediction: {class_name}")
 
 
-def eval_mode(args):
-    """
-    Evaluate model on test data.
-
-    Supports two input formats:
-    1. Image CSV - extracts features on-the-fly
-    2. Feature CSV - loads directly (much faster)
-
-    Two evaluation modes:
-    1. --find-threshold: Analyze uncertainty thresholds (for validation)
-    2. --uncertainty-threshold: Evaluate with specific threshold
-    """
-    print(f"Loading model from {args.model}...")
-    model_bundle = ModelBundle.load(args.model)
-
-    print(f"Loading test data from {args.data}...")
+def eval_mode(args: Any) -> None:
+    """Execute evaluation workflow."""
+    model_bundle = ModelBundle.load(Path(args.model))
     df = pd.read_csv(args.data)
-
-    # Get feature list from model
-    feature_list = [Feature(fname) for fname in model_bundle.feature_names]
     feature_names = model_bundle.feature_names
+    label_map, _ = load_label_map_and_names(args.label_map)
 
-    # Auto-detect CSV format
+    # 1. Get Data
     if is_feature_csv(df):
-        print("\n✓ Detected pre-extracted feature CSV (fast mode)")
+        # Apply mapping here as well for consistency in eval
+        if label_map:
+            df["label"] = df["label"].map(lambda x: label_map.get(x, x))
         X, y_true = load_feature_data(df, feature_names)
-
-        # Predict
-        print("Running inference on test set...")
-        y_proba = predict_proba(model_bundle, X)
-
-        print("\nEvaluation summary:")
-        print(f"  Total lesions: {len(y_true)}")
-        print(f"  Tumors (label=2): {np.sum(y_true == 2)}")
-        print(f"  Cysts (label=3): {np.sum(y_true == 3)}")
-
     else:
-        print("\n⊙ Detected image path CSV (extracting features...)")
-        print("  Tip: Use extract_features_script.py to pre-extract features for faster evaluation")
+        print("Extracting features from images...")
+        all_feats: List[List[float]] = []
+        all_lbls: List[int] = []
+        feature_list = [Feature(f) for f in feature_names]
 
-        # Extract features and predict (original slow path)
-        all_labels = []
-        all_probabilities = []
-
-        print("\nRunning inference on test set...")
-        preprocessor = CTPreprocessor()
-        for idx, row in tqdm(df.iterrows(), total=len(df)):
+        preprocessor = CTPreprocessor(label_map=label_map)
+        for _, row in tqdm(df.iterrows(), total=len(df)):
             try:
-                # Load and preprocess
-                image, seg, _ = preprocessor.process_files(
+                img, seg, _ = preprocessor.process_files(
                     row["image_path"],
                     row["seg_path"],
                 )
-
-                # Extract lesions
-                lesions = extract_lesions(image, seg, min_voxels=args.min_voxels)
-
-                # Process each lesion
-                for lesion_img, lesion_mask, label in lesions:
-                    # Extract features
-                    features = extract_features(lesion_img, lesion_mask, feature_list)
-                    feature_vector = np.array([[features[f.value] for f in feature_list]])
-
-                    # Predict
-                    pred_proba = predict_proba(model_bundle, feature_vector)[0]
-
-                    all_labels.append(label)
-                    all_probabilities.append(pred_proba)
-
+                for l_img, l_mask, lbl in extract_lesions(img, seg, min_voxels=args.min_voxels):
+                    d = extract_features(l_img, l_mask, feature_list)
+                    all_feats.append([float(d[f]) for f in feature_names])
+                    all_lbls.append(lbl)
             except Exception as e:
-                print(f"\nWarning: Failed to process {row['image_path']}: {e}")
+                print(f"Warning: {e}")
                 continue
 
-        if len(all_labels) == 0:
-            print("Error: No valid predictions made!")
-            sys.exit(1)
+        X = np.array(all_feats)
+        y_true = np.array(all_lbls)
 
-        # Convert to numpy arrays
-        y_true = np.array(all_labels)
-        y_proba = np.array(all_probabilities)
+    if len(y_true) == 0:
+        print("No valid data found for evaluation.")
+        return
 
-        print("\nEvaluation summary:")
-        print(f"  Total lesions: {len(y_true)}")
-        print(f"  Tumors (label=2): {np.sum(y_true == 2)}")
-        print(f"  Cysts (label=3): {np.sum(y_true == 3)}")
+    # 2. Predict
+    y_proba = predict_proba(model_bundle, X)
 
-    # Create output directory
+    # 3. Metrics
+    threshold = args.uncertainty_threshold
+    y_pred, _ = apply_uncertainty_threshold(y_proba, threshold)
+
+    use_uncertainty = threshold > 0.5
     output_dir = Path(args.output_dir)
 
-    # Handle uncertainty analysis modes
-    if args.find_threshold:
-        # Threshold analysis mode
-        print("\nAnalyzing uncertainty thresholds...")
-        df_thresholds = find_uncertainty_thresholds(y_true, y_proba, output_dir)
-        print("\nThreshold Analysis:")
-        print(df_thresholds.to_string(index=False))
-
-    else:
-        # Standard evaluation with optional uncertainty threshold
-        threshold = args.uncertainty_threshold
-        use_uncertainty = threshold > 0.5
-
-        if use_uncertainty:
-            print(f"\nUsing uncertainty threshold: {threshold}")
-            y_pred_with_unsure, _ = apply_uncertainty_threshold(y_proba, threshold)
-            metrics = compute_metrics_with_uncertainty(y_true, y_pred_with_unsure, y_proba)
-
-            # Print metrics
-            print_metrics_report(metrics, exclude_unsure=True)
-
-            # Save and plot ROC curve (only on certain predictions)
-            roc_path = output_dir / "roc_curve.png"
-            certain_mask = y_pred_with_unsure != 2
-            if np.sum(certain_mask) > 0:
-                plot_roc_curve(y_true[certain_mask], y_proba[certain_mask], str(roc_path))
-
-            # Plot confusion matrix (2x2, excluding unsure)
-            cm_path = output_dir / "confusion_matrix.png"
-            plot_confusion_matrix_with_unsure(
-                metrics["confusion_matrix_with_unsure"], str(cm_path), include_unsure=False
+    if use_uncertainty:
+        metrics = compute_metrics_with_uncertainty(
+            y_true, y_pred, y_proba, model_bundle.class_names
+        )
+        print_metrics_report(metrics, model_bundle.class_names)
+        if "confusion_matrix_with_unsure" in metrics:
+            plot_confusion_matrix(
+                metrics["confusion_matrix_with_unsure"],  # type: ignore
+                model_bundle.class_names,
+                str(output_dir / "confusion_matrix.png"),
             )
+    else:
+        y_pred_hard = y_proba.argmax(axis=1)
+        metrics = compute_metrics(y_true, y_pred_hard, y_proba, model_bundle.class_names)
+        print_metrics_report(metrics, model_bundle.class_names)
+        plot_confusion_matrix(
+            metrics["confusion_matrix"],  # type: ignore
+            model_bundle.class_names,
+            str(output_dir / "confusion_matrix.png"),
+        )
 
-            # Save metrics to text file
-            metrics_path = output_dir / "metrics.txt"
-            with open(metrics_path, "w") as f:
-                f.write("CLASSIFICATION METRICS (excluding unsure)\n")
-                f.write("=" * 50 + "\n")
-                f.write(f"Uncertainty threshold: {threshold}\n\n")
-                f.write(f"Accuracy:    {metrics['accuracy']:.4f}\n")
-                f.write(f"F1 Score:    {metrics['f1']:.4f}\n")
-                f.write(f"Sensitivity: {metrics['sensitivity']:.4f}\n")
-                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
-                if metrics["auroc"] is not None:
-                    f.write(f"AUROC:       {metrics['auroc']:.4f}\n")
-                f.write(
-                    f"\nCoverage:    {metrics['coverage']:.4f} ({metrics['n_certain']}/{metrics['n_certain'] + metrics['n_unsure']} certain)\n"
-                )
-                f.write(f"Unsure:      {metrics['n_unsure']} predictions\n\n")
-                cm = metrics["confusion_matrix"]
-                f.write("Confusion Matrix (certain predictions only):\n")
-                f.write("                Predicted\n")
-                f.write("              Tumor  Cyst\n")
-                f.write(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}\n")
-                f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n\n")
-                cm_full = metrics["confusion_matrix_with_unsure"]
-                f.write("Full Confusion Matrix (including unsure):\n")
-                f.write("                     Predicted\n")
-                f.write("              Tumor  Cyst  Unsure\n")
-                f.write(
-                    f"True Tumor    {cm_full[0, 0]:5d}  {cm_full[0, 1]:5d}   {cm_full[0, 2]:5d}\n"
-                )
-                f.write(
-                    f"     Cyst     {cm_full[1, 0]:5d}  {cm_full[1, 1]:5d}   {cm_full[1, 2]:5d}\n"
-                )
+    # 4. ROC Curves (Multi-class)
+    # We always plot certain prediction ROCs if probabilities are available
+    if y_proba is not None:
+        if use_uncertainty:
+            # Filter unsure for ROC calculation?
+            # Standard practice: ROC uses raw probabilities. Unsure threshold is a post-processing decision step.
+            # However, y_true must match.
+            # We can plot ROC on the full set using raw probabilities vs true labels.
+            pass
 
-        else:
-            # Standard evaluation (no uncertainty)
-            y_pred = predict(model_bundle, X) if is_feature_csv(df) else y_proba.argmax(axis=1)
-            metrics = compute_metrics(y_true, y_pred, y_proba)
+        plot_multiclass_roc(
+            y_true,
+            y_proba,
+            n_classes=model_bundle.n_classes,
+            class_names=model_bundle.class_names,
+            output_path=str(output_dir / "roc_curves.png"),
+        )
 
-            # Print metrics
-            print_metrics_report(metrics)
-
-            # Save and plot ROC curve
-            roc_path = output_dir / "roc_curve.png"
-            plot_roc_curve(y_true, y_proba, str(roc_path))
-
-            # Save and plot confusion matrix
-            cm_path = output_dir / "confusion_matrix.png"
-            plot_confusion_matrix(metrics["confusion_matrix"], str(cm_path))
-
-            # Save metrics to text file
-            metrics_path = output_dir / "metrics.txt"
-            with open(metrics_path, "w") as f:
-                f.write("CLASSIFICATION METRICS\n")
-                f.write("=" * 50 + "\n")
-                f.write(f"Accuracy:    {metrics['accuracy']:.4f}\n")
-                f.write(f"F1 Score:    {metrics['f1']:.4f}\n")
-                f.write(f"Sensitivity: {metrics['sensitivity']:.4f}\n")
-                f.write(f"Specificity: {metrics['specificity']:.4f}\n")
-                if metrics["auroc"] is not None:
-                    f.write(f"AUROC:       {metrics['auroc']:.4f}\n")
-                f.write("\n")
-                cm = metrics["confusion_matrix"]
-                f.write("Confusion Matrix:\n")
-                f.write("                Predicted\n")
-                f.write("              Tumor  Cyst\n")
-                f.write(f"True Tumor    {cm[0, 0]:5d}  {cm[0, 1]:5d}\n")
-                f.write(f"     Cyst     {cm[1, 0]:5d}  {cm[1, 1]:5d}\n")
-
-        print(f"\nResults saved to {args.output_dir}")
-
-        # Generate explanations if requested
-        if args.explain:
-            print("\nGenerating model explanations...")
-            if use_uncertainty:
-                # Uncertainty-aware explanations
-                explain_with_uncertainty(model_bundle, y_proba, threshold, output_dir, verbose=True)
-            else:
-                # Standard explanations
-                explanation_dir = output_dir / "explanations"
-                if model_bundle.model_type == "logistic":
-                    explain_logistic_regression(
-                        model_bundle,
-                        X if is_feature_csv(df) else None,
-                        y_true,
-                        output_dir=explanation_dir,
-                        verbose=True,
-                    )
-                elif model_bundle.model_type == "tree":
-                    explain_decision_tree(
-                        model_bundle, output_dir=explanation_dir, verbose=True, rule_format="nested"
-                    )
+    # Save raw metrics
+    with open(output_dir / "metrics.txt", "w") as f:
+        f.write(str(metrics))
 
 
-def main():
-    """Main entry point."""
+def main() -> None:
     parser = create_parser()
     args = parser.parse_args()
+    validate_args(args)
 
-    # Validate arguments
-    try:
-        validate_args(args)
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-
-    # Route to appropriate mode
     if args.mode == "train":
         train_mode(args)
     elif args.mode == "infer":

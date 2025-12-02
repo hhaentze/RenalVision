@@ -2,12 +2,13 @@
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 
-def create_parser():
+def create_parser() -> argparse.ArgumentParser:
     """Create argument parser for train/infer/eval modes."""
     parser = argparse.ArgumentParser(
-        description="Cyst vs Tumor Classifier",
+        description="Renal Vision: Dynamic Multi-class Lesion Classifier",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -16,34 +17,51 @@ def create_parser():
     # ========== TRAIN MODE ==========
     train_parser = subparsers.add_parser("train", help="Train a classifier")
     train_parser.add_argument(
-        "--data", type=str, required=True, help="Path to CSV with columns: seg_path, image_path"
+        "--data", type=str, required=True, help="Path to CSV (image paths or feature CSV)"
     )
     train_parser.add_argument(
         "--model",
         type=str,
-        choices=["logistic", "tree"],
+        choices=["logistic", "tree", "xgboost"],
         required=True,
-        help="Model type: logistic regression or decision tree",
+        help="Model architecture to use",
     )
     train_parser.add_argument(
         "--output-dir",
         type=str,
         required=True,
-        help="Output directory (will contain model.pkl and explanations/)",
+        help="Output directory (will contain model.pkl and metadata)",
     )
     train_parser.add_argument(
         "--features",
         type=str,
         nargs="+",
         default=None,
-        help="List of features to use (default: all). Options: mean_hu, std_hu, cov, p10, p90, "
-        "entropy, glcm_contrast, gradient_mag, sphericity, frac_below_20hu",
+        help="List of features to use (default: all)",
     )
     train_parser.add_argument(
         "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
     )
     train_parser.add_argument(
-        "--tree-depth", type=int, default=5, help="Max depth for decision tree (default: 5)"
+        "--tree-depth", type=int, default=5, help="Max depth for decision tree/xgboost (default: 5)"
+    )
+    # Dynamic class arguments
+    train_parser.add_argument(
+        "--n-classes",
+        type=int,
+        default=2,
+        help="Number of classes (used only if training from images directly, ignored for feature CSV)",
+    )
+    train_parser.add_argument(
+        "--class-names",
+        type=str,
+        nargs="+",
+        help="Optional list of class names (e.g. 'Tumor' 'Cyst')",
+    )
+    train_parser.add_argument(
+        "--label-map",
+        type=str,
+        help="Path to JSON file containing label mapping (e.g. {'2': 0, '3': 1})",
     )
     train_parser.add_argument(
         "--explain", action="store_true", help="Generate detailed model explanations"
@@ -53,7 +71,7 @@ def create_parser():
         type=str,
         choices=["nested", "flat"],
         default="nested",
-        help="Format for decision tree rules: nested (if-else) or flat (list of paths) (default: nested)",
+        help="Format for decision tree rules (default: nested)",
     )
 
     # ========== INFER MODE ==========
@@ -77,24 +95,24 @@ def create_parser():
         help="Output path for result (required for --multi-lesion)",
     )
     infer_parser.add_argument(
-        "--no-label-mapping",
-        action="store_true",
-        help="Disable mapping of labels (1,2,3) to (0,1,1)",
+        "--label-map",
+        type=str,
+        help="Path to JSON file containing label mapping for preprocessing",
     )
     infer_parser.add_argument(
-        "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
+        "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels"
     )
     infer_parser.add_argument(
         "--uncertainty-threshold",
         type=float,
         default=0.5,
-        help="Probability threshold for uncertain predictions (default: 0.5 = no unsure class, label=4)",
+        help="Probability threshold. Unsure predictions are labeled as -1.",
     )
 
     # ========== EVAL MODE ==========
     eval_parser = subparsers.add_parser("eval", help="Evaluate model")
     eval_parser.add_argument(
-        "--data", type=str, required=True, help="Path to CSV with columns: seg_path, image_path"
+        "--data", type=str, required=True, help="Path to CSV (image paths or feature CSV)"
     )
     eval_parser.add_argument(
         "--model", type=str, required=True, help="Path to trained model (.pkl)"
@@ -103,10 +121,15 @@ def create_parser():
         "--output-dir", type=str, required=True, help="Output directory for results"
     )
     eval_parser.add_argument(
-        "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels (default: 10)"
+        "--label-map",
+        type=str,
+        help="Path to JSON file containing label mapping for preprocessing",
+    )
+    eval_parser.add_argument(
+        "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels"
     )
 
-    # Uncertainty handling (mutually exclusive)
+    # Uncertainty handling
     uncertainty_group = eval_parser.add_mutually_exclusive_group()
     uncertainty_group.add_argument(
         "--find-threshold",
@@ -117,21 +140,25 @@ def create_parser():
         "--uncertainty-threshold",
         type=float,
         default=0.5,
-        help="Probability threshold for uncertain predictions (default: 0.5 = no unsure class)",
+        help="Probability threshold. Unsure predictions are labeled as -1.",
     )
     eval_parser.add_argument(
         "--explain",
         action="store_true",
-        help="Generate detailed model explanations (includes uncertainty if threshold > 0.5)",
+        help="Generate detailed model explanations",
     )
 
     return parser
 
 
-def validate_args(args):
+def validate_args(args: Any) -> None:
     """Validate parsed arguments."""
     if args.mode == "infer" and args.multi_lesion and args.output is None:
         raise ValueError("--output is required when using --multi-lesion")
 
     if args.mode in ["train", "eval"]:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+
+    if hasattr(args, "label_map") and args.label_map:
+        if not Path(args.label_map).exists():
+            raise FileNotFoundError(f"Label map file not found: {args.label_map}")

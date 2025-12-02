@@ -27,7 +27,7 @@ test:
 
 # Formatting (Fixes code)
 format:
-	ruff check --select I --fix src tests
+	ruff check --select I,F401 --fix src tests
 	black src tests
 	ruff format src tests
 
