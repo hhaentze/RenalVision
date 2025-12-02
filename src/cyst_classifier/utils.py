@@ -268,7 +268,7 @@ def apply_uncertainty_threshold(
 
     # Mark uncertain predictions as class 2
     if threshold > 0.5:
-        predictions = np.where(max_proba < threshold, 2, predictions)
+        predictions = np.where(max_proba < threshold, -1, predictions)
 
     return predictions, max_proba
 
