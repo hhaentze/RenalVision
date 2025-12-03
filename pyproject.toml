@@ -22,6 +22,7 @@ dependencies = [
     "graphviz>=0.20.0",
     "tqdm",
     "scikit-image",
+    "pyarrow",
 ]
 
 [project.optional-dependencies]
