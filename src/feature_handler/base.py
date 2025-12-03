@@ -40,7 +40,7 @@ class BaseFeatureExtractor(ABC):
             List of dictionaries (one per valid lesion found in the image).
         """
         # 1. Run coupled preprocessor
-        img_arr, seg_arr = self.preprocessor(image, seg, augment=augment, affine=affine)
+        img_arr, seg_arr, affine_arr = self.preprocessor(image, seg, augment=augment, affine=affine)
 
         # 2. Identify and sort all lesion components
         components = self._find_and_sort_components(seg_arr)
@@ -52,10 +52,18 @@ class BaseFeatureExtractor(ABC):
             # Delegate specific math to the subclass
             feats = self._extract_single_lesion(img_arr, lesion_mask)
 
+            # Calculate centroid
+            cz, cy, cx = ndimage.center_of_mass(lesion_mask)
+            voxel_coord = np.array([cx, cy, cz, 1.0])
+            world_coord = affine_arr @ voxel_coord
+
             # Append metadata
             feats["lesion_id"] = lesion_id
             feats["class_id"] = class_id
             feats["volume_voxels"] = volume
+            feats["centroid_world_x"] = world_coord[0]
+            feats["centroid_world_y"] = world_coord[1]
+            feats["centroid_world_z"] = world_coord[2]
 
             results.append(feats)
 

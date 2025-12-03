@@ -59,7 +59,7 @@ class BasePreprocessor(ABC):
         seg: Union[str, Path, np.ndarray],
         augment: bool = False,
         affine: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
     @abstractmethod
@@ -149,7 +149,7 @@ class CTPreprocessor(BasePreprocessor):
         seg: Union[str, Path, np.ndarray],
         augment: bool = False,
         affine: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         # 1. Normalize Inputs
         data = self._prepare_data(image, seg, affine)
 
@@ -171,11 +171,20 @@ class CTPreprocessor(BasePreprocessor):
         # 5. Extract & Return Numpy
         if isinstance(img_tensor, MetaTensor):
             image_np = img_tensor.array.squeeze()
+            affine_np = img_tensor.affine.numpy()
         elif isinstance(img_tensor, torch.Tensor):
             image_np = img_tensor.detach().cpu().numpy().squeeze()
+            affine_np = np.eye(4)
+            warnings.warn(
+                "Image tensor is a torch.Tensor without affine; defaulting to identity matrix."
+            )
         else:
             image_np = np.asarray(img_tensor).squeeze()
+            affine_np = np.eye(4)
+            warnings.warn(
+                "Image tensor is a torch.Tensor without affine; defaulting to identity matrix."
+            )
 
         seg_np = data["seg"].array.squeeze().astype(np.int32)
 
-        return image_np, seg_np
+        return image_np, seg_np, affine_np
