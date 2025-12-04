@@ -99,7 +99,7 @@ class RadiomicsExtractor(BaseFeatureExtractor):
         return features
 
     # --- Math Helpers ---
-    # In src/feature_handler/radiomics.py (inside RadiomicsExtractor)
+    # In src/features/radiomics.py (inside RadiomicsExtractor)
 
     @staticmethod
     def _get_bounding_box(mask: np.ndarray) -> tuple[slice, slice, slice]:

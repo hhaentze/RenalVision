@@ -69,10 +69,10 @@ Your input data must be a $\text{CSV}$ file containing at least the following co
 
 ```bash
 # General Syntax:
-# python -m feature_handler.cli --data [INPUT_CSV] --output [OUTPUT_FILE] [OPTIONS]
+# python -m features.cli --data [INPUT_CSV] --output [OUTPUT_FILE] [OPTIONS]
 
 # Example: Extract radiomics features and generate 3 augmented copies per lesion
-python -m feature_handler.cli \
+python -m features.cli \
     --data ./data/raw_data.csv \
     --output ./features/radiomics_v1.parquet \
     --extractor radiomics \
@@ -86,7 +86,7 @@ python -m feature_handler.cli \
 Your model training script should use the static loader utility:
 
 ```python
-from feature_handler.dataset import FeatureDatasetProcessor
+from features.dataset import FeatureDatasetProcessor
 
 # Load the entire feature table as a Pandas DataFrame
 df_features = FeatureDatasetProcessor.load_features("./features/radiomics_v1.parquet")
