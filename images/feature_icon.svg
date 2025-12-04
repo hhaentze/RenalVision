@@ -1,0 +1,17 @@
+<svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(2.5, 2.5)">
+    <rect x="0" y="0" width="45" height="45" rx="8" fill="#3498DB" />
+
+    <g>
+      <path d="M 22 8
+               C 32 8, 38 15, 38 25
+               C 38 35, 30 40, 22 40
+               C 12 40, 8 32, 8 28
+               C 8 24, 15 25, 16 22
+               C 17 19, 12 15, 12 12
+               C 12 8, 16 8, 22 8 Z"
+            stroke="white" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <line x1="5" y1="24" x2="40" y2="24" stroke="white" stroke-width="1.5" stroke-dasharray="2 2" opacity="0.8"/>
+    </g>
+  </g>
+</svg>

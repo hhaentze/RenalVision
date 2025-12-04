@@ -1,4 +1,8 @@
-# 🤖 Feature Handler
+<h1 align="left">
+  <img src="../../images/feature_icon.svg" alt="Feature Logo" width="40" style="vertical-align: middle; margin-right: 10px; margin-bottom: 5px" />
+  Renal Vision - Feature Engine
+</h1>
+
 This module is the **data preparation engine** for the Renal Vision project, responsible for converting raw medical images into standardized, quantifiable feature vectors ($\text{Parquet}$ files) suitable for Machine Learning model training.
 
 The core goal of this module is to decouple the slow, I/O-intensive task of **feature extraction** from the fast, iterative process of **model training and evaluation**.
