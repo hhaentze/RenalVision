@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cyst-classifier"
+name = "renal-vision"
 version = "0.1.0"
-description = "CT-based classifier for distinguishing cysts from solid tumors"
+description = "The Modular Lesion Analysis Platform"
 authors = [{ name = "RUMC Onco AI & TUM AI in Radiology Groups" }]
 readme = "README.md"
 requires-python = ">=3.8"
@@ -41,7 +41,8 @@ dev = [
 ]
 
 [project.scripts]
-cyst-classifier = "cyst_classifier.main:main"
+rv = "src.cli:main"
+renal-vision = "src.cli:main"
 
 ############### Linting & Formatting ###############
 
@@ -56,7 +57,7 @@ extend-select = ["I","F401"] # fix import order, remove unused imports
 ignore = ["E501", "E741"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cyst_classifier"]
+known-first-party = ["modeling","features","shared"]
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["F841", "E402", "PLR0913"]
@@ -83,7 +84,7 @@ addopts = "--verbose"
 
 [tool.coverage.run]
 branch = true
-source = ["cyst_classifier"]
+source = ["modeling"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
