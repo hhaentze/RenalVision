@@ -134,11 +134,11 @@ class LesionPredictor:
         """
         # 1. Load Original Header/Data
         if isinstance(seg, (str, Path)):
-            loader = LoadImage(image_only=False, ensure_channel_first=True)
+            loader = LoadImage(image_only=True, ensure_channel_first=True)
             seg_obj = loader(seg)
             # Use .numpy() to convert MetaTensor to numpy
             orig_affine = seg_obj.affine.numpy()
-            orig_data = seg_obj.array.numpy().squeeze().astype(np.int32)
+            orig_data = seg_obj.array.squeeze().astype(np.int32)
         else:
             if affine is None:
                 raise ValueError("Affine required when inputs are numpy arrays.")

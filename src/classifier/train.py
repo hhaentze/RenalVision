@@ -93,7 +93,7 @@ def run_training(
 
     # 3. Resolve Class Names
     # If config provided, use it. Otherwise, generate generic names.
-    unique_classes = np.unique(y)
+    unique_classes = [int(cl) for cl in np.unique(y)]
     n_classes = len(unique_classes)
 
     loaded_names = load_class_config(class_config_path)
