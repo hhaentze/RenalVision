@@ -1,5 +1,10 @@
-<h2 align="center"> Renal Vision </h2>
-<h3 align="center"> Explainable Cyst vs Tumor Classification </h4>
+<h1 align="center">
+  <img src="./images/icon.svg" alt="Renal Vision Logo" width="50" style="vertical-align: middle; margin-right: 10px;" />
+  Renal Vision
+</h1>
+
+<h3 align="center">The Modular Lesion Analysis Platform</h3>
+
 
 <div align="center">
 <a href="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml/badge.svg"></a>
@@ -7,186 +12,125 @@
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </div>
 
-![Sample Image](images/classification_tree.png)
+RenalVision is a modular, high-performance platform for quantifying and classifying medical imaging lesions.Its architecture is completely modality-agnostic, separating the **Data Extraction Engine** from the **Machine Learning Logic**.
 
+This platform allows researchers to decouple the heavy lifting of image processing (Radiomics, Neural Embeddings) from the rapid iteration of model training.
 
-## Installation
+## 🌟 Core Features
+
+* **Modular Architecture:** Explicit separation between Feature Extraction (`src/features`) and Model Training (`src/modeling`).
+* **Offline Feature Store:** Converts heavy NIfTI/NRRD/MHA datasets into lightweight, efficient **Parquet** feature stores.
+* **Self-Contained Models:** Trained models (`ModelBundle`) store their own preprocessing configuration, class mappings, and scaling logic, ensuring reproducible inference.
+* **Robust Inference:** Implements **World Coordinate Matching** to map predictions back to original segmentations, regardless of resampling or cropping.
+* **Explainable-Ready:** Built-in support for classical ML (Logistic Regression, Decision Trees) and Gradient Boosting (XGBoost).
+
+## 🛠️ Installation
 
 ```bash
-pip install -e .
+# Clone the repository
+git clone https://github.com/hhaentze/renal-vision.git
+cd renal-vision
 
-# for development
-make install-dev
+# Install in editable mode
+pip install -e .`
+
 ```
 
-## Python API
-You can use CystClassifier's [Predictor](src/cyst_classifier/inference.py) class to classify a single lesion or to update an entire map of segmentations. Input can be either numpy arrays or the paths to files.
+## 🚀 Quick Start (CLI)
+The platform exposes a unified command-line interface: rv.
 
+### 1. Extract Features (Data Engine)
+Convert raw images and masks into a feature table.
+
+```bash
+rv extract \
+    --data ./data/dataset.csv \
+    --output ./data/features/radiomics_v1.parquet \
+    --extractor radiomics \
+    --augment 3 \
+    --normalize
+```
+
+
+### 2. Train Model (Logic Engine)
+Train a classifier on the extracted features.
+
+```bash
+rv train \
+    --data ./data/features/radiomics_v1.parquet \
+    --output-dir ./models/v1 \
+    --model xgboost
+```
+
+### 3. Run Inference
+Predict on new scans using the trained model bundle.
+
+```bash
+rv infer \
+    --image ./new_data/scan_001.nii.gz \
+    --seg ./new_data/mask_001.nii.gz \
+    --model ./models/v1/model.pkl \
+    --output ./results/prediction_001.nii.gz
+```
+
+## 🐍 Python API
+RenalVision is designed to be used programmatically for custom pipelines.
+
+### Loading Features for Custom Training
 ```python
-from cyst_classifier.inference import Predictor
 
-# Initialize model
-predictor = Predictor(model_path = "model.pkl")
+from src.features.dataset import FeatureDatasetProcessor
 
-# Predict a single lesion
-prediction = predictor.infer_lesion(image_path, seg_path)
+# Load the Parquet store as a Pandas DataFrame
+# Contains metadata (case_id, lesion_id) + feature columns
+df = FeatureDatasetProcessor.load_features("./data/features/radiomics_v1.parquet")
 
-if prediction == -1:
-    class_name = "Unsure"
-elif prediction == 0:
-    class_name = "Tumor"
-elif prediction == 1:
-    class_name = "Cyst"
-print(f"\nPrediction: {class_name}")
+print(df.head())
+Running Inference in Your Script
+Python
 
-# Predict all lesions in a mask and save mask
-_ , prediction_mask, _ = predictor.infer_mask(image_path, seg_path, output="mask.nii.gz")
+from src.modeling.inference import LesionPredictor
+
+# 1. Initialize Predictor (Auto-loads extractor config from the model)
+predictor = LesionPredictor(model_path="./models/v1/model.pkl")
+
+# 2. Predict a single lesion
+result = predictor.infer_lesion(image="scan.nii.gz", seg="lesion_mask.nii.gz")
+print(f"Prediction: {result['class_name']} ({result['confidence']:.1%})")
+
+# 3. Predict full mask (multi-lesion)
+predictor.infer_mask(
+    image="scan.nii.gz",
+    seg="full_mask.nii.gz",
+    output_path="predictions.nii.gz"
+)
 ```
 
-### Predict directly from images
-``` python
-import SimpleITK as sitk
+## 🔌 Expandability
+The platform is designed for extension.
 
-from cyst_classifier.inference import Predictor
-from cyst_classifier.preprocessing import create_affine_from_spacing
+### Adding New Feature Extractors:
 
-sitk_img = sitk.ReadImage("scan.nii.gz")
-sitk_seg = sitk.ReadImage("mask.nii.gz")
+1. Create a new class in `src/features/` inheriting from `BaseFeatureExtractor`.
 
-# 1. Get Arrays (SimpleITK is usually (z, y, x), verify your axis order!)
-image_np = sitk.GetArrayFromImage(sitk_img) # Returns (Z, Y, X)
-seg_np = sitk.GetArrayFromImage(sitk_seg)
+2. Implement `_extract_single_lesion` (logic) and `get_config` (serialization).
 
-# 2. Get Affine
-original_spacing = sitk_img.GetSpacing()
-affine_np = create_affine_from_spacing(original_spacing)
+3. Register it in the `_reconstruct_extractor factory` in `src/modeling/inference.py`.
 
-# 3. (Optional) Define a custom class mapping
-# We expect the classes 0:background and 1:abnormality as input.
-# However, segmentations in KiTS23, for example, have the labels 0:background, 1:kidney, 2:tumor, 3:cyst
-label_map={
-  1:0,  # ignore kidneys
-  2:1,  # abnormality
-  3:1   # abnormality
-}
+### Adding New Models:
 
-# Predict
-predictor = Predictor(model_path = "model.pkl") # only works for single lesions
-prediction = predictor.infer_lesion(image_np, seg_np, affine_np, label_map=label_map)
-_ , prediction_mask, _ = predictor.infer_mask(image_np, seg_np, affine_np, label_map = label_map)
-```
+1. Add the architecture to `src/modeling/models.py` inside ModelFactory.
+
+2. Update the `ModelType` enum.
+
+### Adding Custom Preprocessing:
+
+1. Create a `CustomPreprocessor` in `src/features/preprocessing.py` inheriting from `BasePreprocessor`.
+
+2. Pass this preprocessor to your Extractor.
 
 
-
-
-## Usage
-
-TLDR: Check out our fully working [demo notebook](notebooks/demo.ipynb) to train a classifier on pre-extracted features from the KITS 23 dataset!
-
-### Generate train/test split
-```python
-from cyst_classifier.data_utils import generate_train_test_split
-import pandas as pd
-
-df = pd.read_csv("data.csv")
-train_idx, test_idx = generate_train_test_split(df, test_size=0.2, random_state=42)
-df.iloc[train_idx].to_csv("train.csv", index=False)
-df.iloc[test_idx].to_csv("test.csv", index=False)
-```
-
-### Pre-extract features (RECOMMENDED for fast experimentation)
-```bash
-# Extract features once (slow)
-python -m cyst_classifier.extract_features --data train.csv --output features_train.csv
-python -m cyst_classifier.extract_features --data test.csv --output features_test.csv
-
-# Train on cached features (fast - seconds instead of hours!)
-cyst_classifier train --data features_train.csv --model logistic --output-dir results --explain
-
-# Evaluate on cached features (fast)
-cyst_classifier eval --data features_test.csv --model results/model.pkl --output-dir results --explain
-```
-
-### Train a model (direct from images - slower)
-```bash
-cyst_classifier train --data train.csv --model logistic --output-dir results
-```
-
-### Inference on single lesion
-```bash
-cyst_classifier infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl
-```
-
-### Inference on multi-lesion scan
-```bash
-cyst_classifier infer --image ct.nii.gz --seg mask.nii.gz --model model.pkl --multi-lesion --output result.nii.gz
-```
-
-### Evaluate model
-```bash
-# From cached features (fast)
-cyst_classifier eval --data features_test.csv --model model.pkl --output-dir results/
-
-# Or directly from images (slower)
-cyst_classifier eval --data test.csv --model model.pkl --output-dir results/
-
-# With uncertainty handling
-cyst_classifier eval --data test.csv --model model.pkl --output-dir results/ --uncertainty-threshold 0.75
-
-# Find optimal uncertainty threshold (validation set)
-cyst_classifier eval --data val.csv --model model.pkl --output-dir results/ --find-threshold
-
-# With explanations (includes uncertainty-aware explanations if threshold > 0.5)
-cyst_classifier eval --data test.csv --model model.pkl --output-dir results/ --uncertainty-threshold 0.75 --explain
-```
-
-## Performance Tips
-
-**For rapid experimentation**: Pre-extract features with `extract_features_script.py`
-- Feature extraction: ~1-2 hours (one time)
-- Model training: ~seconds (can repeat many times)
-- Space efficient: ~72 bytes per lesion vs ~500KB for image data
-
-**The main script auto-detects** whether you're using feature CSVs or image CSVs, so you can switch seamlessly!
-
-## Data Format
-
-Input CSV should have columns: `case`,`seg_path`, `image_path`
-
-Segmentation labels:
-- 1: Kidney (ignored)
-- 2: Tumor (solid)
-- 3: Cyst
-
-## Features
-
-The classifier uses the following radiomics features:
-- Mean HU (intensity)
-- Standard deviation HU
-- Coefficient of variation (std/mean)
-- 10th and 90th percentiles
-- Entropy (histogram-based)
-- GLCM contrast (texture)
-- Mean gradient magnitude (edge characteristics)
-- Sphericity (shape regularity)
-- Fraction of voxels < 20 HU (fluid detection)
-
-## Models
-
-The following models are implemented at the moment.
-- Logistic Regression `--model logistic`
-- Shallow Tree `--model tree`
-
-
-## Explainability
-
-Running `cyst_classifier train` automatically creates an explainability folder inside the specified directory. Check it out to see which features were espacially important. If you set the `--explain` a comprehensive overview will be printed as well.
-Neat: if you combine `--uncertainty-threshold X` and `--explain` during evaluation a new updated explainability section that takes uncertainty into account will be created!
-
-
-![Sample Image 2](images/explainability.png)
-
-## How to Contribute
+## 📝 How to Contribute
 
 To mantain hiqh quality code please adhere to our coding guidelines. You can run the full Continuous Integration pipeline locally. This ensures your code is clean, typed correctly, and fully tested.
 
