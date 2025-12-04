@@ -1,5 +1,5 @@
 """
-Command-line interface for the feature_handler module.
+Command-line interface for the features module.
 Acts as the entry point for batch feature extraction.
 """
 

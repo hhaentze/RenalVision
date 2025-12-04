@@ -4,7 +4,7 @@ Main command-line interface for the Cyst Classifier.
 
 import argparse
 
-from classifier import eval, inference, train
+from modeling import eval, inference, train
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -24,9 +24,7 @@ def create_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--class-config", help="JSON map of class names (e.g. {'0': 'Tumor'})"
     )
-    train_parser.add_argument(
-        "--extractor-config", help="JSON config from feature_handler (optional)"
-    )
+    train_parser.add_argument("--extractor-config", help="JSON config from features (optional)")
     train_parser.add_argument("--depth", type=int, default=5, help="Tree depth")
 
     # ================= EVAL =================

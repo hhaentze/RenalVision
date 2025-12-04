@@ -8,8 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
-from classifier.models import ModelBundle, predict_proba
-from feature_handler.dataset import FeatureDatasetProcessor
+from features.dataset import FeatureDatasetProcessor
+from modeling.models import ModelBundle, predict_proba
 from shared.metrics import (
     compute_metrics,
     plot_confusion_matrix,

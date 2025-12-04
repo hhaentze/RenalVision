@@ -11,9 +11,9 @@ import numpy as np
 from monai.transforms import LoadImage, SaveImage
 from scipy import ndimage
 
-from classifier.models import ModelBundle, predict, predict_proba
-from feature_handler.preprocessing import CTPreprocessor
-from feature_handler.radiomics import RadiomicsExtractor
+from features.preprocessing import CTPreprocessor
+from features.radiomics import RadiomicsExtractor
+from modeling.models import ModelBundle, predict, predict_proba
 
 
 class LesionPredictor:
