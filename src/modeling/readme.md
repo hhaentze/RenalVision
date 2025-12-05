@@ -7,7 +7,7 @@
 
 This module contains the "Brain" of the RenalVision platform. It is responsible for learning patterns from feature vectors and generating predictions on new data.
 
-Unlike the `features` module, this module is **modality-agnostic**. It operates primarily on tabular data (Parquet/Numpy) and does not handle image I/O directly, except during the final Inference stage.
+Unlike the `features` module, this module is **preprocessing-agnostic**. It operates primarily on tabular data (Parquet/Numpy) and does not handle image I/O directly, except during the final Inference stage.
 
 ## 📦 The `ModelBundle`
 
@@ -20,20 +20,11 @@ A `ModelBundle` contains:
 4.  **Class Mappings:** Stores `{0: "Tumor", 1: "Cyst"}` internally, ensuring output is always human-readable.
 5.  **Transform Logic:** Knows which features require log-transformation (e.g., `gradient_magnitude`) before prediction.
 
-## 🧠 Inference Logic: World Coordinate Matching
+## 🧠 Inference Logic: All In One
 
-The most complex component of this module is `LesionPredictor` (`inference.py`). It bridges the gap between **Image Space** and **Feature Space**.
+Inference sounds easy, but you may ask yourself: Which spacing and orientation do I need? Do I need to normalize the images? Which class names correspond to the predicted ids?
 
-**The Problem:**
-Preprocessing (in `src/features`) often resamples, crops, or rotates images. This means voxel indices $(i, j, k)$ in the feature map do not match voxel indices in the user's original segmentation mask.
-
-**The Solution:**
-We implement **World Coordinate Matching**.
-1.  **Extraction:** When features are extracted, we calculate the centroid of the lesion in physical space (millimeters) using the image's affine matrix.
-2.  **Prediction:** We calculate the physical centroids of components in the user's original mask.
-3.  **Matching:** We map predictions to original components by finding the nearest neighbor in physical space (Euclidean distance).
-
-This ensures robust predictions even if the preprocessor drastically changes the image grid.
+All of this is stored in the model bundle! In the exact same configurations as  used during training. ALl you need is an image and a segmentation mask of a typical medical format and `LesionPredictor` (`inference.py`) handles the rest.
 
 ## 🤖 Supported Algorithms
 

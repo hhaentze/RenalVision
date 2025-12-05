@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
-from monai.transforms import LoadImage, SaveImage
-from scipy import ndimage
+from monai.data import MetaTensor
+from monai.transforms import SaveImage
 
-from features.preprocessing import CTPreprocessor
+from features.preprocessing import CTPreprocessor, ImageLike
 from features.radiomics import RadiomicsExtractor
 from modeling.models import ModelBundle, predict, predict_proba
 
@@ -66,144 +66,109 @@ class LesionPredictor:
 
     def infer_lesion(
         self,
-        image: Union[str, Path, np.ndarray],
-        seg: Union[str, Path, np.ndarray],
-        affine: Union[None, np.ndarray] = None,
+        image: ImageLike,
+        seg: ImageLike,
     ) -> Dict[str, Any]:
         """
         Predict the class of a single lesion (or the largest lesion in the mask).
+        [Important] Class IDs start at 0
+
         Returns a dictionary with the prediction and probability.
         """
-        # 1. Extract Features (returns list of dicts, one per lesion)
-        # Note: We disable augmentation during inference
-        lesion_features = self.extractor.extract(
-            image,
-            seg,
-            affine=affine,
-            augment=False,
-        )
+        # 1. Extract Features
+        lesion_features = self.extractor.extract(image, seg, augment=False)
 
         if not lesion_features:
             raise ValueError("No valid lesions found in input segmentation.")
-
-        # We assume the user wants the primary lesion (ID 1), which is sorted first
+        if len(lesion_features) > 1:
+            raise ValueError(
+                f"Found {len(lesion_features)} different lesions.",
+                "For predicting more than one lesion please use infer_mask.",
+            )
         target_lesion = lesion_features[0]
 
         # 2. Prepare Feature Vector
         # Extract columns in the exact order the model expects
         try:
-            vector = [target_lesion[f] for f in self.bundle.feature_names]
+            X = np.array([target_lesion[f] for f in self.bundle.feature_names])
+            X = X[None]
         except KeyError as e:
             raise KeyError(f"Feature extraction mismatch. Missing feature: {e}")
 
-        X = np.array([vector])
-
         # 3. Predict
-        class_idx = predict(self.bundle, X)[0]
-        proba = predict_proba(self.bundle, X)[0]
-
-        class_name = self.bundle.class_names.get(class_idx, f"Class {class_idx}")
+        pred_proba = predict_proba(self.bundle, X)
+        pred_class = int(np.argmax(pred_proba))
+        class_name = self.bundle.class_names.get(pred_class, f"Class {pred_class}")
 
         return {
             "lesion_id": target_lesion.get("lesion_id"),
-            "class_id": int(class_idx),
+            "class_id": pred_class,
             "class_name": class_name,
-            "probability": proba.tolist(),
-            "confidence": float(np.max(proba)),
+            "probability": pred_proba.tolist(),
+            "confidence": float(np.max(pred_proba)),
             "volume_voxels": target_lesion.get("volume_voxels"),
         }
 
     def infer_mask(
         self,
-        image: Union[str, Path, np.ndarray],
-        seg: Union[str, Path, np.ndarray],
-        affine: Optional[np.ndarray] = None,
-        output_path: Optional[Union[str, Path]] = None,
-    ) -> np.ndarray:
+        image: ImageLike,
+        seg: ImageLike,
+        output_path: Optional[str | Path] = None,
+    ) -> MetaTensor:
         """
         Predict classes for all lesions in a segmentation mask.
+        [Important] Class IDs start at 1 (0 is background class)
 
         Args:
-            image: Path to CT image or numpy array.
-            seg: Path to segmentation mask or numpy array.
-            affine: Affine matrix (required if inputs are numpy arrays).
-            output_path: Optional path to save the result as NIfTI.
+            image: Path to CT image or Monai MetaTensor.
+            seg: Path to segmentation mask or Monai MetaTensor.
+            output_path: Optional path to save the result.
 
         Returns:
             np.ndarray: The predicted segmentation mask (same shape as input).
         """
-        # 1. Load Original Header/Data
-        if isinstance(seg, (str, Path)):
-            loader = LoadImage(image_only=True, ensure_channel_first=True)
-            seg_obj = loader(seg)
-            # Use .numpy() to convert MetaTensor to numpy
-            orig_affine = seg_obj.affine.numpy()
-            orig_data = seg_obj.array.squeeze().astype(np.int32)
-        else:
-            if affine is None:
-                raise ValueError("Affine required when inputs are numpy arrays.")
-            orig_data = seg.astype(np.int32)
-            orig_affine = affine
+        # 1. Load/Cast segmentation of to be classified target lesions
+        seg_obj = self.extractor.preprocessor._prepare_data_point(seg)
 
-        # 2. Extract Features
-        lesion_features = self.extractor.extract(image, seg, augment=False, affine=affine)
+        # 2. separate connected components in source mask and asign ids
+        # (we need those for step 4)
+        components = self.extractor._find_components(seg_obj)
+        components = [c[0] for c in components]
+        labeled_mask = seg_obj * 0  # new empty meta tensor
+        for lesion_id, comp in enumerate(components, start=1):
+            labeled_mask[comp != 0] = lesion_id
+        print(f"Extracting features for {len(components)} lesions")
 
-        prediction_mask = np.zeros_like(orig_data, dtype=np.int16)
+        # 3. extract features
+        lesion_features = self.extractor.extract(image, labeled_mask, augment=False)
 
-        if not lesion_features:
-            return prediction_mask
+        # 4. predict and map predicitons to output mask
+        prediction_mask = seg_obj * 0  # new empty meta tensor
 
-        # 3. Reconstruction Loop (Match World Coordinates)
-        unique_classes = np.unique(orig_data)
-        unique_classes = unique_classes[unique_classes > 0]
+        for features in lesion_features:
+            # Extract columns in the exact order the model expects
+            try:
+                X = np.array([features[f] for f in self.bundle.feature_names])
+                X = X[None]
+            except KeyError as e:
+                raise KeyError(f"Feature extraction mismatch. Missing feature: {e}")
+            prediction = predict(self.bundle, X)[0]
 
-        for c_id in unique_classes:
-            labeled_mask, num_components = ndimage.label(orig_data == c_id)
+            # the lesion ids that we created in (2) are now stored in features["class_id"]
+            if features["class_id"] in range(1, len(components) + 1):
+                prediction_mask[labeled_mask == features["class_id"]] = prediction
+                prediction_mask[labeled_mask == features["class_id"]] += 1
+            else:
+                raise ValueError(f"Unknown class id: {features['class_id']}")
 
-            for i in range(1, num_components + 1):
-                component_mask = labeled_mask == i
-
-                # A. Calculate Original Centroid (World Coords)
-                cz, cy, cx = ndimage.center_of_mass(component_mask)
-                voxel_coord = np.array([cx, cy, cz, 1.0])
-                orig_center = (orig_affine @ voxel_coord)[:3]
-
-                # B. Find Nearest Feature Match
-                best_match = None
-                min_dist = float("inf")
-
-                for feat in lesion_features:
-                    feat_center = np.array(
-                        [
-                            feat["centroid_world_x"],
-                            feat["centroid_world_y"],
-                            feat["centroid_world_z"],
-                        ]
-                    )
-                    dist = float(np.linalg.norm(orig_center - feat_center))
-
-                    if dist < min_dist:
-                        min_dist = dist
-                        best_match = feat
-
-                # C. Predict & Paint
-                match_threshold = 5.0  # mm
-                if best_match and min_dist <= match_threshold:
-                    vector = np.array([[best_match[f] for f in self.bundle.feature_names]])
-                    pred_class = predict(self.bundle, vector)[0]
-                    prediction_mask[component_mask] = int(pred_class)
-                else:
-                    # No match found within threshold; assign background
-                    prediction_mask[component_mask] = -1
-                    print(f"No match found for component {i} of class {c_id}; assigned -1.")
-
-        # 4. Optional Save (using MONAI SaveImage)
+        # 5. Optional Save
         if output_path:
             out_p = Path(output_path)
 
             # Robust extension handling (for cases like .nii.gz)
             extensions = "".join(out_p.suffixes)
             stem = out_p.name.replace(extensions, "")
+            prediction_mask.meta["filename_or_obj"] = stem
 
             saver = SaveImage(
                 output_dir=out_p.parent,
@@ -213,14 +178,6 @@ class LesionPredictor:
                 resample=False,  # We are providing the grid
                 print_log=True,
             )
-
-            # Add singleton channel dim: [D, H, W] -> [1, D, H, W]
-            pred_with_channel = prediction_mask[None, ...]
-
-            # Mock the metadata
-            meta_map = {"filename_or_obj": stem, "affine": orig_affine}
-
-            saver(pred_with_channel, meta_data=meta_map)
-            print(f"Prediction mask saved to {out_p}")
+            saver(prediction_mask)
 
         return prediction_mask
