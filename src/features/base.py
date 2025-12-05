@@ -4,12 +4,12 @@ Handles component analysis and orchestration.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from scipy import ndimage
 
-from .preprocessing import BasePreprocessor
+from .preprocessing import BasePreprocessor, ImageLike
 
 
 class BaseFeatureExtractor(ABC):
@@ -28,10 +28,9 @@ class BaseFeatureExtractor(ABC):
 
     def extract(
         self,
-        image: Union[str, Any],  # str or Path or np.ndarray
-        seg: Union[str, Any],
+        image: ImageLike,  # str or Path or np.ndarray
+        seg: ImageLike,
         augment: bool = False,
-        affine: Optional[np.ndarray] = None,
     ) -> List[Dict[str, Any]]:
         """
         Public interface: Preprocess -> Find Lesions -> Extract per Lesion.
@@ -40,10 +39,10 @@ class BaseFeatureExtractor(ABC):
             List of dictionaries (one per valid lesion found in the image).
         """
         # 1. Run coupled preprocessor
-        img_arr, seg_arr, affine_arr = self.preprocessor(image, seg, augment=augment, affine=affine)
+        img_arr, seg_arr = self.preprocessor(image, seg, augment=augment)
 
         # 2. Identify and sort all lesion components
-        components = self._find_and_sort_components(seg_arr)
+        components = self._find_components(seg_arr)
 
         results: List[Dict[str, Any]] = []
 
@@ -52,30 +51,21 @@ class BaseFeatureExtractor(ABC):
             # Delegate specific math to the subclass
             feats = self._extract_single_lesion(img_arr, lesion_mask)
 
-            # Calculate centroid
-            cz, cy, cx = ndimage.center_of_mass(lesion_mask)
-            voxel_coord = np.array([cx, cy, cz, 1.0])
-            world_coord = affine_arr @ voxel_coord
-
             # Append metadata
             feats["lesion_id"] = lesion_id
             feats["class_id"] = class_id
             feats["volume_voxels"] = volume
-            feats["centroid_world_x"] = world_coord[0]
-            feats["centroid_world_y"] = world_coord[1]
-            feats["centroid_world_z"] = world_coord[2]
 
             results.append(feats)
 
         return results
 
-    def _find_and_sort_components(self, seg: np.ndarray) -> List[Tuple[np.ndarray, int, int]]:
+    def _find_components(self, seg: np.ndarray) -> List[Tuple[np.ndarray, int, int]]:
         """
         Scans segmentation for connected components per class.
 
         Returns:
             List of tuples: (binary_mask, class_id, volume)
-            Sorted by volume descending (Global Sort).
         """
         components = []
 
@@ -97,11 +87,6 @@ class BaseFeatureExtractor(ABC):
                 if volume >= self.min_voxels:
                     # Store tuple: (mask, class_id, volume)
                     components.append((component_mask, int(c_id), volume))
-
-        # Global Sort: Sort all components by volume (descending)
-        # This means Lesion 1 is the largest abnormality in the scan,
-        # regardless of whether it is a cyst or tumor.
-        components.sort(key=lambda x: x[2], reverse=True)
 
         return components
 

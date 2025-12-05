@@ -204,7 +204,7 @@ def _preprocess_for_inference(model_bundle: ModelBundle, X: np.ndarray) -> np.nd
                 idx = model_bundle.feature_names.index(fname)
                 X_processed[:, idx] = np.log1p(X_processed[:, idx])
             except ValueError:
-                pass  # Feature not found (should not happen if pipeline is correct)
+                raise ValueError(f"Undefined feature name: {fname}")
 
     # 2. Apply Scaling
     if model_bundle.scaler:
@@ -214,12 +214,13 @@ def _preprocess_for_inference(model_bundle: ModelBundle, X: np.ndarray) -> np.nd
 
 
 def predict_proba(model_bundle: ModelBundle, X: np.ndarray) -> np.ndarray:
-    """Predict class probabilities (handles preprocessing internally)."""
+    """Predict class probabilities (handles preprocessing internally) for input batch."""
     X_input = _preprocess_for_inference(model_bundle, X)
     return model_bundle.model.predict_proba(X_input)
 
 
 def predict(model_bundle: ModelBundle, X: np.ndarray) -> np.ndarray:
-    """Predict class labels (handles preprocessing internally)."""
+    """Predict class labels (handles preprocessing internally) for input batch."""
+    print("DEBUG", "Features", X)
     X_input = _preprocess_for_inference(model_bundle, X)
     return model_bundle.model.predict(X_input)

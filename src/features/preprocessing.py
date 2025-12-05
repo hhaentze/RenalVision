@@ -2,64 +2,53 @@
 Preprocessing logic using MONAI for CT images.
 """
 
-import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
-import torch
 from monai.data import MetaTensor
 from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
     EnsureTyped,
-    LoadImaged,
+    LoadImage,
     MapLabelValued,
     RandAffined,
     RandGaussianNoised,
-    ScaleIntensityRange,
+    ScaleIntensityRanged,
     Spacingd,
 )
+
+ImageLike = Union[str, Path, MetaTensor]
 
 
 class BasePreprocessor(ABC):
     """Abstract base class for all preprocessors."""
 
-    def _prepare_data(
-        self,
-        image: Union[str, Path, np.ndarray],
-        seg: Union[str, Path, np.ndarray],
-        affine: Optional[np.ndarray] = None,
-    ) -> Dict[str, Any]:
+    def _prepare_data_point(self, image: ImageLike) -> MetaTensor:
+        if isinstance(image, MetaTensor):
+            return image
+        else:
+            return LoadImage()(image)
+
+    def _prepare_data(self, image: ImageLike, seg: ImageLike) -> Dict[str, MetaTensor]:
         """
         Helper method to normalize inputs into a MONAI-compatible dictionary.
         """
-        if isinstance(image, (str, Path)) and isinstance(seg, (str, Path)):
-            loader = LoadImaged(keys=["image", "seg"], image_only=False)
-            return loader({"image": image, "seg": seg})
 
-        elif isinstance(image, np.ndarray) and isinstance(seg, np.ndarray):
-            if affine is None:
-                affine = np.eye(4)
-                warnings.warn("No affine provided for numpy inputs; defaulting to identity matrix.")
-            return {
-                "image": MetaTensor(torch.tensor(image), affine=torch.tensor(affine)),
-                "seg": MetaTensor(torch.tensor(seg), affine=torch.tensor(affine)),
-            }
-        else:
-            raise ValueError(
-                "Inputs for 'image' and 'seg' must be both file paths or both numpy arrays."
-            )
+        return {
+            "image": self._prepare_data_point(image),
+            "seg": self._prepare_data_point(seg),
+        }
 
     @abstractmethod
     def __call__(
         self,
-        image: Union[str, Path, np.ndarray],
-        seg: Union[str, Path, np.ndarray],
+        image: ImageLike,
+        seg: ImageLike,
         augment: bool = False,
-        affine: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         pass
 
     @abstractmethod
@@ -103,22 +92,25 @@ class CTPreprocessor(BasePreprocessor):
             ),
         ]
 
-        # 2. Windowing (Intensity Clipping & Optional Scaling)
-        # Calculate window boundaries
+        # 2. Intensity Transforms (should be applied after augmentation)
+
+        # Calculate window boundaries and normalize to [0, 1] if specified
         win_min = self.window_center - self.window_width / 2
         win_max = self.window_center + self.window_width / 2
-
-        # Normalize to [0, 1] if specified
         b_min = 0.0 if self.normalize else win_min
         b_max = 1.0 if self.normalize else win_max
 
-        self.intensity_transform = ScaleIntensityRange(
-            a_min=win_min,
-            a_max=win_max,
-            b_min=b_min,
-            b_max=b_max,
-            clip=True,
-        )
+        self.intensity_transforms = [
+            EnsureChannelFirstd(keys=["image", "seg"], channel_dim="no_channel"),
+            ScaleIntensityRanged(
+                keys=["image"],
+                a_min=win_min,
+                a_max=win_max,
+                b_min=b_min,
+                b_max=b_max,
+                clip=True,
+            ),
+        ]
 
         # 3. Augmentation
         self.aug_transforms = [
@@ -145,46 +137,25 @@ class CTPreprocessor(BasePreprocessor):
 
     def __call__(
         self,
-        image: Union[str, Path, np.ndarray],
-        seg: Union[str, Path, np.ndarray],
+        image: ImageLike,
+        seg: ImageLike,
         augment: bool = False,
-        affine: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # 1. Normalize Inputs
-        data = self._prepare_data(image, seg, affine)
+        data = self._prepare_data(image, seg)
 
-        # 2. Build Pipeline
+        # 2. Build Pipeline (cast strictly for MyPy)
         transforms = list(self.base_transforms)
         if augment:
-            # Cast strictly for MyPy
             transforms.extend(cast(List[Any], self.aug_transforms))
-
+        transforms.extend(cast(List[Any], self.intensity_transforms))
         pipeline = Compose(transforms)
 
         # 3. Apply Transforms
         data = pipeline(data)
 
-        # 4. Apply Windowing (on image only)
-        img_tensor = data["image"]
-        img_tensor = self.intensity_transform(img_tensor)
-
         # 5. Extract & Return Numpy
-        if isinstance(img_tensor, MetaTensor):
-            image_np = img_tensor.array.squeeze()
-            affine_np = img_tensor.affine.numpy()
-        elif isinstance(img_tensor, torch.Tensor):
-            image_np = img_tensor.detach().cpu().numpy().squeeze()
-            affine_np = np.eye(4)
-            warnings.warn(
-                "Image tensor is a torch.Tensor without affine; defaulting to identity matrix."
-            )
-        else:
-            image_np = np.asarray(img_tensor).squeeze()
-            affine_np = np.eye(4)
-            warnings.warn(
-                "Image tensor is a torch.Tensor without affine; defaulting to identity matrix."
-            )
+        image_np = data["image"].detach().cpu().numpy().squeeze()
+        seg_np = data["seg"].detach().cpu().numpy().squeeze().astype(np.int16)
 
-        seg_np = data["seg"].array.squeeze().astype(np.int32)
-
-        return image_np, seg_np, affine_np
+        return image_np, seg_np
