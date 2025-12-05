@@ -11,9 +11,10 @@ import numpy as np
 from monai.data import MetaTensor
 from monai.transforms import SaveImage
 
-from features.preprocessing import CTPreprocessor, ImageLike
-from features.radiomics import RadiomicsExtractor
-from modeling.models import ModelBundle, predict, predict_proba
+from renal_vision.features.preprocessing import CTPreprocessor, ImageLike
+from renal_vision.features.radiomics import RadiomicsExtractor
+
+from .models import ModelBundle, predict, predict_proba
 
 
 class LesionPredictor:

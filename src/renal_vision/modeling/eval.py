@@ -8,13 +8,14 @@ from pathlib import Path
 
 import numpy as np
 
-from features.dataset import FeatureDatasetProcessor
-from modeling.models import ModelBundle, predict_proba
-from shared.metrics import (
+from renal_vision.features.dataset import FeatureDatasetProcessor
+from renal_vision.shared.metrics import (
     compute_metrics,
     plot_confusion_matrix,
     plot_multiclass_roc,
 )
+
+from .models import ModelBundle, predict_proba
 
 
 def run_evaluation(
