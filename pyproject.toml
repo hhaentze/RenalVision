@@ -41,8 +41,8 @@ dev = [
 ]
 
 [project.scripts]
-rv = "src.renal_vision.cli:main"
-renal-vision = "src.renal_vision.cli:main"
+rv = "renal_vision.cli:main"
+renal-vision = "renal_vision.cli:main"
 
 ############### Linting & Formatting ###############
 
