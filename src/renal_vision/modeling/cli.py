@@ -4,11 +4,11 @@ Main command-line interface for the Cyst Classifier.
 
 import argparse
 
-from . import eval, inference, train
-
 
 # ================= Logic =================
 def run_train(args: argparse.Namespace) -> None:
+    from . import train
+
     train.run_training(
         data_path=args.data,
         output_dir=args.output_dir,
@@ -20,6 +20,8 @@ def run_train(args: argparse.Namespace) -> None:
 
 
 def run_eval(args: argparse.Namespace) -> None:
+    from . import eval
+
     eval.run_evaluation(
         data_path=args.data,
         model_path=args.model,
@@ -28,6 +30,8 @@ def run_eval(args: argparse.Namespace) -> None:
 
 
 def run_infer(args: argparse.Namespace) -> None:
+    from . import inference
+
     predictor = inference.LesionPredictor(model_path=args.model)
 
     if args.output:
