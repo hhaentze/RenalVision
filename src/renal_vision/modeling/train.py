@@ -70,7 +70,9 @@ def run_training(
     df = FeatureDatasetProcessor.load_features(data_path)
 
     # 1. Identify Feature Columns
-    # We dynamically select all columns that are not known metadata
+    # Exlcude non numeric columns
+    df = df.select_dtypes(include=[np.number])
+    # Select all columns that are not known metadata
     feature_names = [c for c in df.columns if c not in METADATA_COLUMNS]
 
     if not feature_names:
@@ -105,7 +107,7 @@ def run_training(
             class_names[cls] = loaded_names[cls]
         else:
             class_names[cls] = f"Class {cls}"
-            warnings.warn(f"No name provided for Class {cls}. Using default.")
+            print(f"No name provided for Class {cls}. Using default.")
 
     print(f"Training on {len(df)} samples ({n_classes} classes).")
     print(f"Class mapping: {class_names}")
@@ -117,6 +119,7 @@ def run_training(
         with open(extractor_config_path, "r") as f:
             extractor_config = json.load(f)
     else:
+        # TODO Is this correct?
         warnings.warn(
             "No extractor config provided. Inference may require manual configuration. "
             "Assuming default Radiomics settings."
