@@ -149,28 +149,20 @@ def train_classifier(
     log_features: List[str] = []
     n_classes = len(np.unique(y))
 
-    # 1. Log Transform (Logic preserved from original code)
-    # We apply log to specific skewed features if they exist in the dataset
+    # 1. Apply log transform to skewed features
     if apply_log_transform:
         skewed_candidates = ["gradient_magnitude", "sphericity"]
         for i, fname in enumerate(feature_names):
             if fname in skewed_candidates:
-                # log1p safely handles zeros
                 X_processed[:, i] = np.log1p(X_processed[:, i])
                 log_features.append(fname)
 
     # 2. Scaling
-    # Tree models don't strictly need scaling, but it helps convergence for some implementations
-    # and doesn't hurt. Logistic absolutely needs it.
     scaler = None
     if model_type == ModelType.LOGISTIC.value:
         scaler = StandardScaler()
         X_final = scaler.fit_transform(X_processed)
     else:
-        # Optional: You could scale for trees too, but typically raw is fine.
-        # Original code fit a scaler but didn't always use it.
-        # Let's fit it if we want to support it later, or skip.
-        # For strict parity with typical ML ops, we'll skip scaling for trees.
         X_final = X_processed
 
     # 3. Train
@@ -221,6 +213,5 @@ def predict_proba(model_bundle: ModelBundle, X: np.ndarray) -> np.ndarray:
 
 def predict(model_bundle: ModelBundle, X: np.ndarray) -> np.ndarray:
     """Predict class labels (handles preprocessing internally) for input batch."""
-    print("DEBUG", "Features", X)
     X_input = _preprocess_for_inference(model_bundle, X)
     return model_bundle.model.predict(X_input)
