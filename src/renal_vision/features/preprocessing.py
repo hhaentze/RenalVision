@@ -2,9 +2,10 @@
 Preprocessing logic using MONAI for CT images.
 """
 
+import copy
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import numpy as np
 from monai.data import MetaTensor
@@ -33,10 +34,7 @@ class BasePreprocessor(ABC):
             return LoadImage()(image)
 
     def _prepare_data(self, image: ImageLike, seg: ImageLike) -> Dict[str, MetaTensor]:
-        """
-        Helper method to normalize inputs into a MONAI-compatible dictionary.
-        """
-
+        """Helper method to normalize inputs into a MONAI-compatible dictionary."""
         return {
             "image": self._prepare_data_point(image),
             "seg": self._prepare_data_point(seg),
@@ -52,6 +50,12 @@ class BasePreprocessor(ABC):
         pass
 
     @abstractmethod
+    def stream_augmented(
+        self, image: ImageLike, seg: ImageLike, n_augmentations: int
+    ) -> Generator[Tuple[np.ndarray, np.ndarray, bool], None, None]:
+        pass
+
+    @abstractmethod
     def get_config(self) -> Dict[str, Any]:
         pass
 
@@ -60,6 +64,12 @@ class CTPreprocessor(BasePreprocessor):
     """
     Standard CT Preprocessor using MONAI.
     """
+
+    def _finalize_numpy(self, data: dict[str, MetaTensor]) -> Tuple[np.ndarray, np.ndarray]:
+        """Helper to convert dictionary to numpy return format."""
+        image_np = data["image"].detach().cpu().numpy().squeeze()
+        seg_np = data["seg"].detach().cpu().numpy().squeeze().astype(np.int16)
+        return image_np, seg_np
 
     def __init__(
         self,
@@ -155,7 +165,43 @@ class CTPreprocessor(BasePreprocessor):
         data = pipeline(data)
 
         # 5. Extract & Return Numpy
-        image_np = data["image"].detach().cpu().numpy().squeeze()
-        seg_np = data["seg"].detach().cpu().numpy().squeeze().astype(np.int16)
+        return self._finalize_numpy(data)
 
-        return image_np, seg_np
+    def stream_augmented(
+        self, image: ImageLike, seg: ImageLike, n_augmentations: int
+    ) -> Generator[Tuple[np.ndarray, np.ndarray, bool], None, None]:
+        """
+        Generator that loads once, then yields:
+        1. The original (non-augmented) image/seg
+        2. n_augmentations versions of augmented image/seg
+
+        Returns generator object with:
+         - transformed image: np.ndarray
+         - transformed segmentation: np.ndarray
+         - is_augmented: bool
+        """
+
+        if n_augmentations < 0:
+            raise ValueError(f"Number of augmentations cannot be negative. Is: {n_augmentations}")
+
+        # 1. HEAVY LIFTING (Done Once)
+        base_data = self._prepare_data(image, seg)
+        base_data = Compose(self.base_transforms)(base_data)
+
+        # 2. Pipeline for intensity (always applied) and augmentation
+        # We need separate pipelines because we apply them at different stages
+        aug_pipeline = Compose(cast(List[Any], self.aug_transforms))
+        intensity_pipeline = Compose(cast(List[Any], self.intensity_transforms))
+
+        # 3. Yield Original
+        data_orig = copy.deepcopy(base_data)
+        data_orig = intensity_pipeline(data_orig)
+        yield *self._finalize_numpy(data_orig), False  # (data, is_augmented)
+
+        # 4. Yield Augmentations
+        for _ in range(n_augmentations):
+            data_aug = copy.deepcopy(base_data)
+            data_aug = aug_pipeline(data_aug)
+            data_aug = intensity_pipeline(data_aug)
+
+            yield *self._finalize_numpy(data_aug), True

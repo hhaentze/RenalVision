@@ -46,33 +46,24 @@ class FeatureDatasetProcessor:
             # Base metadata from the CSV row (case_id, etc.)
             row_meta = row.to_dict()
 
-            # Helper to run extraction and append to results
-            def _run_and_collect(is_aug: bool, aug_id: int):
-                try:
-                    # extract() returns a LIST of dicts (one per lesion)
-                    lesion_features_list = self.extractor.extract(
-                        image_path, seg_path, augment=is_aug
+            try:
+                # Extract features
+                if augment_count > 0:
+                    lesion_features_list = self.extractor.extract_multiple_augmentations(
+                        image_path, seg_path, augment_count
                     )
+                else:
+                    lesion_features_list = self.extractor.extract(image_path, seg_path)
 
-                    for lesion_feats in lesion_features_list:
-                        # Merge row metadata + lesion features
-                        entry = row_meta.copy()
-                        entry.update(lesion_feats)
-                        entry["augmented"] = is_aug
-                        entry["aug_id"] = aug_id
-                        results.append(entry)
+                # Merge features with metadata
+                for lesion_feats in lesion_features_list:
+                    entry = row_meta.copy()
+                    entry.update(lesion_feats)
+                    results.append(entry)
 
-                except Exception as e:
-                    print(f"Error processing {image_path} (aug={is_aug}): {e}")
+            except Exception as e:
+                print(f"Error processing {image_path}: {e}")
 
-            # 1. Original
-            _run_and_collect(is_aug=False, aug_id=0)
-
-            # 2. Augmentations
-            for i in range(augment_count):
-                _run_and_collect(is_aug=True, aug_id=i + 1)
-
-        # 3. Save
         self._save_results(results, output_path)
 
     @staticmethod
