@@ -8,32 +8,36 @@
 
 <div align="center">
 <a href="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml/badge.svg"></a>
-<a href="https://github.com/hhaentze/CystClassifier/master/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+<a href="https://github.com/hhaentze/RenalVision/blob/main/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+
+<a href="https://www.comfort-ai.eu/for-patients/kidney-cancer">
+  <img alt="Classification Paper" src="https://img.shields.io/badge/paper-classification-red.svg">
+</a>
+
 </div>
 
-RenalVision is a modular, high-performance platform for quantifying and classifying medical imaging lesions.Its architecture is completely modality-agnostic, separating the **Data Extraction Engine** from the **Machine Learning Logic**.
+RenalVision is a modular, high-performance platform for quantifying and classifying medical imaging lesions. Its architecture is completely modality-agnostic, separating the [**Data Engine**](src/renal_vision/features) from the [**Machine Learning Logic**](src/renal_vision/modeling).
 
 This platform allows researchers to decouple the heavy lifting of image processing (Radiomics, Neural Embeddings) from the rapid iteration of model training.
 
 ## 🌟 Core Features
 
-* **Modular Architecture:** Explicit separation between Feature Extraction (`src/features`) and Model Training (`src/modeling`).
-* **Offline Feature Store:** Converts heavy NIfTI/NRRD/MHA datasets into lightweight, efficient **Parquet** feature stores.
+* **Modular Architecture:** Explicit separation between Feature Extraction (`renal_vision/features`) and Model Training (`renal_vision/modeling`).
+* **Offline Feature Store:** Converts heavy NIfTI/NRRD/MHA datasets into lightweight, efficient Parquet feature stores.
 * **Self-Contained Models:** Trained models (`ModelBundle`) store their own preprocessing configuration, class mappings, and scaling logic, ensuring reproducible inference.
-* **Robust Inference:** Implements **World Coordinate Matching** to map predictions back to original segmentations, regardless of resampling or cropping.
+* **Robust Inference:** Classify single or multiple lesions in a scan at once without any additional configurations. `LesionPredictor` handles it for you.
 * **Explainable-Ready:** Built-in support for classical ML (Logistic Regression, Decision Trees) and Gradient Boosting (XGBoost).
 
 ## 🛠️ Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/hhaentze/renal-vision.git
-cd renal-vision
+git clone https://github.com/hhaentze/RenalVision.git
+cd RenalVision
 
 # Install in editable mode
 pip install -e .`
-
 ```
 
 ## 🚀 Quick Start (CLI)
@@ -47,19 +51,23 @@ rv extract \
     --data ./data/dataset.csv \
     --output ./data/features/radiomics_v1.parquet \
     --extractor radiomics \
-    --augment 3 \
-    --normalize
+    --augment 3
 ```
 
 
-### 2. Train Model (Logic Engine)
-Train a classifier on the extracted features.
+### 2. Train & Evaluate Model (Logic Engine)
+Utilize the extracted features.
 
 ```bash
 rv train \
     --data ./data/features/radiomics_v1.parquet \
-    --output-dir ./models/v1 \
-    --model xgboost
+    --model xgboost \
+    --output-dir ./models/v1
+
+rv eval \
+    --data ./data/features/radiomics_v2.parquet \
+    --model ./models/v1/model.pkl \
+    --output-dir ./models/v1
 ```
 
 ### 3. Run Inference
@@ -72,6 +80,8 @@ rv infer \
     --model ./models/v1/model.pkl \
     --output ./results/prediction_001.nii.gz
 ```
+
+##
 
 ## 🐍 Python API
 RenalVision is designed to be used programmatically for custom pipelines.
