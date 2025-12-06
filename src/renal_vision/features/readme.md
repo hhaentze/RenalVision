@@ -37,13 +37,15 @@ Handles the "Scale".
 Access the Data Engine via the unified `rv` command.
 
 ### Basic Extraction
+Extract a feature vector for each connected component in the segmentation mask. By default the the values of the segmentation mask are stored as class ids. If you want to configure this you can pass your own label mapping. For example in the KiTS data we would like to ignore kidney masks and include tumors and cysts, so we create a custom label mapping: `{1:0,2:1,3:2}`.
 ```bash
 rv extract \
     --data ./data/train_data.csv \
     --output ./data/features/train_features.parquet \
     --extractor radiomics \
-    --min-voxels 10 # exclude lesions smaller than 10 volume voxels (default)
-    --augment 5 # generate 5 synthetic variations for every lesion
+    --label-map label-map.json \
+    --min-voxels 10 \ # exclude lesions smaller than 10 volume voxels (default)
+    --augment 5 # generate 5 (additional) synthetic variations for every lesion
 ```
 ### Output Format
 The resulting Parquet file contains flat rows with metadata and features:

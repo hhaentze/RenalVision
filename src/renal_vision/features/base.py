@@ -28,7 +28,7 @@ class BaseFeatureExtractor(ABC):
 
     def extract(
         self,
-        image: ImageLike,  # str or Path or np.ndarray
+        image: ImageLike,
         seg: ImageLike,
         augment: bool = False,
     ) -> List[Dict[str, Any]]:
@@ -55,8 +55,38 @@ class BaseFeatureExtractor(ABC):
             feats["lesion_id"] = lesion_id
             feats["class_id"] = class_id
             feats["volume_voxels"] = volume
-
+            feats["augmented"] = augment
+            feats["aug_id"] = 0
             results.append(feats)
+
+        return results
+
+    def extract_multiple_augmentations(
+        self, image: ImageLike, seg: ImageLike, n_augmentations: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns features for original image + n segmentations.
+        Has better load management compare to running extract n+1 times
+        """
+
+        results: List[Dict[str, Any]] = []
+        data_stream = self.preprocessor.stream_augmented(image, seg, n_augmentations)
+
+        augmentation_id = 0
+        for img_arr, seg_arr, is_augmented in data_stream:
+            components = self._find_components(seg_arr)
+
+            for lesion_id, (lesion_mask, class_id, volume) in enumerate(components, start=1):
+                feats = self._extract_single_lesion(img_arr, lesion_mask)
+
+                feats["lesion_id"] = lesion_id
+                feats["class_id"] = class_id
+                feats["volume_voxels"] = volume
+                feats["augmented"] = is_augmented
+                feats["aug_id"] = augmentation_id
+
+                results.append(feats)
+            augmentation_id += 1
 
         return results
 
