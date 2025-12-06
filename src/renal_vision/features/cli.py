@@ -4,34 +4,34 @@ Acts as the entry point for batch feature extraction.
 """
 
 import argparse
-import json
-from pathlib import Path
-from typing import Dict, Optional
-
-import pandas as pd
-
-from .dataset import FeatureDatasetProcessor
-from .preprocessing import CTPreprocessor
-from .radiomics import RadiomicsExtractor
 
 
 # ================= Logic =================
-def load_label_map(json_path: Optional[str]) -> Dict[int, int]:
-    """Load label mapping from JSON file."""
-    if not json_path:
-        return {0: 0}
-
-    path = Path(json_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Label map file not found: {json_path}")
-
-    with open(path, "r") as f:
-        data = json.load(f)
-        # Ensure keys/values are integers
-        return {int(k): int(v) for k, v in data.items()}
-
-
 def run_extract(args: argparse.Namespace) -> None:
+    import json
+    from pathlib import Path
+    from typing import Dict, Optional
+
+    import pandas as pd
+
+    from .dataset import FeatureDatasetProcessor
+    from .preprocessing import CTPreprocessor
+    from .radiomics import RadiomicsExtractor
+
+    def load_label_map(json_path: Optional[str]) -> Dict[int, int]:
+        """Load label mapping from JSON file."""
+        if not json_path:
+            return {0: 0}
+
+        path = Path(json_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Label map file not found: {json_path}")
+
+        with open(path, "r") as f:
+            data = json.load(f)
+            # Ensure keys/values are integers
+            return {int(k): int(v) for k, v in data.items()}
+
     # 1. Load Data
     if not Path(args.data).exists():
         raise FileNotFoundError(f"Input CSV not found: {args.data}")
