@@ -1,98 +1,68 @@
 <h1 align="left">
-  <img src="../../images/feature_icon.svg" alt="Feature Logo" width="40" style="vertical-align: middle; margin-right: 10px; margin-bottom: 5px" />
-  Renal Vision - Feature Engine
+  <img src="../../../images/feature_icon.svg" alt="Feature Logo" width="40" style="vertical-align: middle; margin-right: 10px; margin-bottom: 5px" />
+  Renal Vision - Data Engine
 </h1>
 
-This module is the **data preparation engine** for the Renal Vision project, responsible for converting raw medical images into standardized, quantifiable feature vectors ($\text{Parquet}$ files) suitable for Machine Learning model training.
+The **Data Engine** is the foundation of the RenalVision platform. It is responsible for the ingestion, preprocessing, and quantification of medical images. Its primary role is to convert raw volumetric data (e.g., NIfTI, NRRD, MHA) into structured, machine-learnable feature vectors stored in **Parquet** format.
 
-The core goal of this module is to decouple the slow, I/O-intensive task of **feature extraction** from the fast, iterative process of **model training and evaluation**.
+This module is stateless and completely decoupled from the downstream modeling logic.
 
------
+## 🌟 Key Capabilities
 
-## ✨ Core Features
+* **Modality Agnostic:** Built on top of MONAI, enabling support for typical biomedical imaging formats like NIfTI, NRRD, and MHA.
+* **Lesion Detection:** Automatically scans segmentation masks to identify and isolate individual connected components (lesions) for analysis.
+* **MetaTensor Powered:** Relies exclusively on MONAI's MetaTensor architecture. This ensures that spatial metadata (affine matrices, spacing) is carried implicitly through the pipeline without manual management, reducing the risk of incorrect resampling.
+* **Augmentation Pipeline:** Supports generating $N$ augmented feature vectors per lesion (via random spatial and intensity transformations) to upsample rare classes before training.
 
-  * **Decoupled Architecture:** Features are calculated offline, ensuring models are trained only on features, not pixels. This enables rapid experimentation.
-  * **Per-Lesion Analysis:** Automatically identifies all individual connected components (lesions) within a segmentation mask, filters out components smaller than the specified $\text{minimum voxel}$ threshold, and extracts features for each one separately.
-  * **$\text{Global Lesion ID}$:** Lesions are assigned an ID based on size, with the largest lesion in the scan always designated as $\text{Lesion 1}$.
-  * **Flexible Feature Extraction:** Designed with a `BaseFeatureExtractor` to support different feature types:
-      * **Radiomics (Current):** Extracts $\text{HU}$-based intensity, shape, and texture metrics.
-      * **Neural Embeddings (Future):** Easily allows integration of foundation models ($\text{ResNet}$, $\text{DINOv2}$) for advanced semantic feature extraction.
-  * **Data Augmentation:** Supports generating augmented feature vectors via random spatial and intensity transformations during extraction.
-  * **Efficient Storage:** Uses the **$\text{Parquet}$** format for high-speed loading and efficient storage of both scalar radiomics and high-dimensional embeddings.
+## 📐 Architecture
 
------
+### 1. The Preprocessor (`preprocessing.py`)
+Handles the "Pixels".
+* **Input:** File paths or MetaTensors.
+* **Operations:** Spacing normalization, Intensity Windowing, and standardizing inputs into MONAI MetaTensor objects.
+* **Configuration:** Stores exact windowing parameters to ensure the Inference phase replicates the Training phase 1:1.
 
-## 🏗️ Structure and Components
+### 2. The Extractor (`base.py`, `radiomics.py`)
+Handles the "Math".
+* **Radiomics:** Implements standard features (Shape, Intensity, GLCM Texture).
+* **Foundation Models (TODO):** The `BaseFeatureExtractor` interface is designed to support Deep Learning extractors (e.g., FMCIB) that map lesion crops to embedding vectors.
 
-The module is built on three main classes that work together in a pipeline:
-
-### 1\. $\text{BasePreprocessor}$ ($\text{Preprocessing.py}$)
-
-  * **Role:** Handles all image I/O and spatial normalization.
-  * **Key Functions:**
-      * $\text{Loading}$: Reads $\text{NIfTI}$ files or wraps $\text{NumPy}$ arrays.
-      * $\text{Resampling/Windowing}$: Normalizes spacing and clips intensity to $\text{HU}$ window.
-      * $\text{Augmentation}$: Applies random spatial and intensity transformations if requested.
-      * *Note*: Preserves $\text{HU}$ units by default for radiomics compatibility.
-
-### 2\. $\text{BaseFeatureExtractor}$ ($\text{Base.py}$)
-
-  * **Role:** Orchestrator and abstraction layer.
-  * **Key Functions:**
-      * $\text{Orchestration}$: Manages the flow from $\text{Preprocessor}$ output to final feature lists.
-      * $\text{Component Splitting}$: Splits the segmentation mask into individual lesion components, assigns a unique $\text{lesion\_id}$, and derives the $\text{class\_id}$ for each.
-      * $\text{\_extract\_single\_lesion}$: Abstract method implemented by subclasses to define the actual calculation (e.g., radiomics math or neural network forward pass).
-
-### 3\. $\text{FeatureDatasetProcessor}$ ($\text{Dataset.py}$)
-
-  * **Role:** Batch processing and data management.
-  * **Key Functions:**
-      * $\text{Batch Execution}$: Iterates over the input $\text{CSV}$ of paths, calls the $\text{Extractor}$ for each image, and manages the augmentation loop.
-      * $\text{I/O}$: Merges extracted features with original metadata and saves the consolidated data to a $\text{Parquet}$ file.
-      * $\text{Loading}$: Provides a static utility function to easily load the final $\text{Parquet}$ dataset for use in the $\text{cyst\_classifier}$ module.
-
------
+### 3. The Batch Processor (`dataset.py`)
+Handles the "Scale".
+* Orchestrates the iteration over dataset manifests (CSVs).
+* Manages memory-efficient writing to **Parquet** files.
 
 ## 🚀 Usage
 
-The primary entry point for batch feature extraction is the command-line interface: $\text{cli.py}$.
+Access the Data Engine via the unified `rv` command.
 
-### Prerequisites
-
-Your input data must be a $\text{CSV}$ file containing at least the following columns:
-
-  * $\text{image\_path}$
-  * $\text{seg\_path}$
-  * Any additional metadata columns ($\text{case}$, $\text{patient\_id}$, etc.) you wish to include in the output.
-
-### Extraction Command
-
+### Basic Extraction
 ```bash
-# General Syntax:
-# python -m features.cli --data [INPUT_CSV] --output [OUTPUT_FILE] [OPTIONS]
-
-# Example: Extract radiomics features and generate 3 augmented copies per lesion
-python -m features.cli \
-    --data ./data/raw_data.csv \
-    --output ./features/radiomics_v1.parquet \
+rv extract \
+    --data ./data/train_data.csv \
+    --output ./data/features/train_features.parquet \
     --extractor radiomics \
-    --augment 3 \
-    --min-voxels 20 \
-    --label-map ./config/label_map.json
+    --min-voxels 10 # exclude lesions smaller than 10 volume voxels (default)
+    --augment 5 # generate 5 synthetic variations for every lesion
 ```
+### Output Format
+The resulting Parquet file contains flat rows with metadata and features:
+| case_id | filepath | lesion_id | class_id | ... | mean_hu | sphericity | augment |
+|---------|----------|-----------|----------|-----|---------|------------|---------|
+| case_01 | image1.nii.gz| 1         | 1        | ... | 85.4    | 0.65       |True      |
+| case_01 | image1.nii.gz| 2         | 2        | ... | 4.2     | 0.98       |True      |
 
-### Loading Features for Training
 
-Your model training script should use the static loader utility:
+## 🔌 Extending for Foundation Models
+To add a new feature extractor (e.g., FMCIB):
 
-```python
-from features.dataset import FeatureDatasetProcessor
+**1. Create** `src/renal_vision/features/neural.py`:Inherit from `BaseFeatureExtractor`.
 
-# Load the entire feature table as a Pandas DataFrame
-df_features = FeatureDatasetProcessor.load_features("./features/radiomics_v1.parquet")
+**2. Implement** `_extract_single_lesion`:
+* Take the image and lesion_mask (MetaTensors).
+* Calculate the bounding box.
+* Crop and resize to target tensor size (e.g., $50 \times 50 \times 50$).
+* Pass through your PyTorch model.
+* Return the flattened embedding vector (e.g., {"emb_0": 0.1, "emb_1": ...}).
 
-# df_features contains all original metadata + lesion_id, class_id, and feature columns.
-# It is now ready for model training!
-```
-
------
+**3. Register**: Add the new key (e.g., "fmcib") to the factory method in `src/renal_vision/modeling/inference.py`.
