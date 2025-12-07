@@ -23,6 +23,7 @@ dependencies = [
     "tqdm",
     "scikit-image",
     "pyarrow",
+    "pyradiomics",
 ]
 
 [project.optional-dependencies]
