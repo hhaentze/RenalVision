@@ -258,7 +258,7 @@ class CTPreprocessor(BasePreprocessor):
         # 4. Cropping
         crop_transforms = [
             CropForegroundd(
-                keys=["image", "seg"], mode=("bilinear", "nearest"), source_key="seg", margin=20
+                keys=["image", "seg"], mode=("bilinear", "nearest"), source_key="seg", margin=5
             )
         ]
 

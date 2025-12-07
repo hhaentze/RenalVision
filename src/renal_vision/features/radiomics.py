@@ -2,29 +2,15 @@
 Radiomics feature extractor implementation.
 """
 
-from enum import Enum
+import logging
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from scipy import ndimage
-from scipy.stats import entropy as scipy_entropy
-from skimage.feature import graycomatrix, graycoprops
+import SimpleITK as sitk
+from radiomics import featureextractor
 
 from .base import BaseFeatureExtractor
 from .preprocessing import BasePreprocessor, CTPreprocessor
-
-
-class RadiomicsFeature(Enum):
-    MEAN_HU = "mean_hu"
-    STD_HU = "std_hu"
-    COV = "coefficient_of_variation"
-    P10 = "percentile_10"
-    P90 = "percentile_90"
-    ENTROPY = "entropy"
-    GLCM_CONTRAST = "glcm_contrast"
-    GRADIENT_MAG = "gradient_magnitude"
-    SPHERICITY = "sphericity"
-    FRAC_BELOW_20HU = "fraction_below_20hu"
 
 
 class RadiomicsExtractor(BaseFeatureExtractor):
@@ -34,20 +20,69 @@ class RadiomicsExtractor(BaseFeatureExtractor):
         feature_names: Optional[List[str]] = None,
         min_voxels: int = 10,
     ) -> None:
-        # Default: preserve HU values (normalize=False)
+        # 1. Define Preprocessor
         if preprocessor is None:
             preprocessor = CTPreprocessor(normalize=False)
-
         super().__init__(preprocessor, min_voxels)
 
-        if feature_names:
-            self._active_features = [RadiomicsFeature(f) for f in feature_names]
+        # 2. Configure PyRadiomics Extractor
+        rad_settings = {
+            "binWidth": 25.0,
+            "resampledPixelSpacing": None,  # Assumes input is 1x1x1
+            "interpolator": "sitkNearestNeighbor",
+            "verbose": False,
+        }
+        self.engine = featureextractor.RadiomicsFeatureExtractor(**rad_settings)
+        radiomics_logger = logging.getLogger("radiomics")
+        radiomics_logger.setLevel(logging.ERROR)
+
+        # 3. Enable standard classes (Lesion Classification Core Set)
+        self.engine.disableAllFeatures()
+        core_classes = ["shape", "firstorder", "glcm", "glrlm", "glszm"]
+        for c in core_classes:
+            self.engine.enableFeatureClassByName(c)
+
+        # 4. Resolve _active_features to a concrete list
+        if feature_names is None:
+            self._active_features = self._get_all_possible_feature_names()
         else:
-            self._active_features = list(RadiomicsFeature)
+            self._active_features = feature_names
+
+    def _get_all_possible_feature_names(self) -> list[str]:
+        """
+        Runs a dummy extraction on a tiny synthetic image to determine
+        EXACTLY which keys this version of PyRadiomics returns.
+        """
+        # 1. Create a tiny synthetic image (5x5x5)
+        # We use a simple pattern to ensure valid texture calculation
+        size = (5, 5, 5)
+        image = np.zeros(size, dtype=np.float32)
+        mask = np.zeros(size, dtype=np.uint8)
+
+        # Fill a small cube in the center
+        image[1:4, 1:4, 1:4] = 100  # Set intensity
+        mask[1:4, 1:4, 1:4] = 1  # Set label 1
+
+        # 2. Convert to SimpleITK (PyRadiomics expects SITK)
+        sitk_image = sitk.GetImageFromArray(image)
+        sitk_mask = sitk.GetImageFromArray(mask)
+
+        # 3. Run execution
+
+        result = self.engine.execute(sitk_image, sitk_mask)
+
+        # 4. Extract and Filter Keys
+        feature_names = []
+        for key in result.keys():
+            # Exclude metadata/diagnostics
+            if not key.startswith("diagnostics_"):
+                feature_names.append(key)
+
+        return sorted(feature_names)
 
     @property
     def feature_names(self) -> List[str]:
-        return [f.value for f in self._active_features]
+        return self._active_features
 
     def get_config(self) -> Dict[str, Any]:
         return {
@@ -57,157 +92,34 @@ class RadiomicsExtractor(BaseFeatureExtractor):
             "preprocessor": self.preprocessor.get_config(),
         }
 
-    def _extract_single_lesion(
-        self, image: np.ndarray, lesion_mask: np.ndarray
-    ) -> Dict[str, float]:
+    def _extract_single_lesion(self, image: np.ndarray, mask: np.ndarray) -> Dict[str, float]:
         """
         Calculate radiomics for the isolated binary lesion mask.
         """
-        features: Dict[str, float] = {}
 
-        # The base class guarantees lesion_mask is boolean and specific to one component
-        lesion_voxels = image[lesion_mask]
+        if np.sum(mask) == 0:
+            raise ValueError("Empty lesion mask provided for feature extraction.")
 
-        # Safety check (should be caught by min_voxels, but good for robustness)
-        if lesion_voxels.size == 0:
-            raise ValueError("Lesion mask is empty during feature extraction.")
+        # 1. Convert Numpy -> SimpleITK (Required by pyradiomics)
+        sitk_img = sitk.GetImageFromArray(image)
+        sitk_mask = sitk.GetImageFromArray(mask)
 
-        for feature in self._active_features:
-            if feature == RadiomicsFeature.MEAN_HU:
-                features[feature.value] = float(np.mean(lesion_voxels))
-            elif feature == RadiomicsFeature.STD_HU:
-                features[feature.value] = float(np.std(lesion_voxels))
-            elif feature == RadiomicsFeature.COV:
-                mu = float(np.mean(lesion_voxels))
-                features[feature.value] = float(np.std(lesion_voxels) / mu) if mu != 0 else 0.0
-            elif feature == RadiomicsFeature.P10:
-                features[feature.value] = float(np.percentile(lesion_voxels, 10))
-            elif feature == RadiomicsFeature.P90:
-                features[feature.value] = float(np.percentile(lesion_voxels, 90))
-            elif feature == RadiomicsFeature.ENTROPY:
-                hist, _ = np.histogram(lesion_voxels, bins=32, density=True)
-                features[feature.value] = float(scipy_entropy(hist[hist > 0]))
-            elif feature == RadiomicsFeature.GLCM_CONTRAST:
-                features[feature.value] = self._compute_glcm_contrast(image, lesion_mask)
-            elif feature == RadiomicsFeature.GRADIENT_MAG:
-                features[feature.value] = self._compute_gradient_magnitude(image, lesion_mask)
-            elif feature == RadiomicsFeature.SPHERICITY:
-                features[feature.value] = self._compute_sphericity(lesion_mask)
-            elif feature == RadiomicsFeature.FRAC_BELOW_20HU:
-                features[feature.value] = float(np.sum(lesion_voxels < 20) / len(lesion_voxels))
+        # 2. Execute (returns an OrderedDict containing ~100 features)
+        raw_results = self.engine.execute(sitk_img, sitk_mask)
 
-        return features
+        # 3. Filter & Return (only return the keys present in self._active_features)
+        results = {}
+        for key in self._active_features:
+            if key in raw_results:
+                results[key] = float(raw_results[key])
+            else:
+                # DEBUG: This will trigger for your error
+                print(f"MISSING KEY: {key}")
+                print(f"  Available keys: {list(raw_results.keys())}")
+                print(f"  Image Max: {np.max(image)}, Min: {np.min(image)}")
+                print(f"  Mask Sum: {np.sum(mask)}")
 
-    # --- Math Helpers ---
-    # In src/features/radiomics.py (inside RadiomicsExtractor)
+                # Assign NaN or 0.0 to prevent crash, or raise error
+                results[key] = float("nan")
 
-    @staticmethod
-    def _get_bounding_box(mask: np.ndarray) -> tuple[slice, slice, slice]:
-        """Calculates the bounding box slices for a 3D binary mask."""
-        coords = np.argwhere(mask)
-        if coords.size == 0:
-            raise ValueError("Mask is empty")
-
-        # Get min and max indices along each axis
-        min_coords = coords.min(axis=0)
-        max_coords = coords.max(axis=0) + 1
-
-        # Return slices (z, y, x)
-        return (
-            slice(min_coords[0], max_coords[0]),
-            slice(min_coords[1], max_coords[1]),
-            slice(min_coords[2], max_coords[2]),
-        )
-
-    def _compute_glcm_contrast(self, image: np.ndarray, mask: np.ndarray) -> float:
-        """
-        Computes GLCM Contrast using a 3D approximation by averaging contrast
-        over the three principal planes (XY, XZ, YZ) of the lesion's bounding box.
-        """
-
-        # Access parameters from the instantiated Preprocessor
-        if not isinstance(self.preprocessor, CTPreprocessor):
-            raise ValueError("Preprocessor must be CTPreprocessor for GLCM computation.")
-        center = self.preprocessor.window_center
-        width = self.preprocessor.window_width
-
-        # 1. Define Fixed Quantization Range (HU values are fixed after clipping)
-        lower_bound = center - width / 2.0
-
-        # Define a Fixed Bin Width (e.g., 25 HU, which is a common value in radiomics)
-        # Using a fixed width preserves the physical meaning of contrast.
-        bin_width = 25.0
-
-        bbox = RadiomicsExtractor._get_bounding_box(mask)
-        cropped_image = image[bbox]
-        cropped_mask = mask[bbox]
-
-        # 2. Quantize the Cropped Volume using Fixed Bin Width
-        # Calculate the number of bins based on the window width
-        num_levels = int(np.ceil(width / bin_width))
-        if num_levels < 2:
-            num_levels = 2  # Ensure minimum 2 levels
-
-        # Shift the image, divide by bin width, and clamp/cast to discrete levels
-        quantized_volume = np.floor((cropped_image - lower_bound) / bin_width)
-
-        # Clip the result to ensure it stays within [0, num_levels - 1]
-        quantized_volume = np.clip(quantized_volume, 0, num_levels - 1).astype(np.uint8)
-
-        contrast_values = []
-
-        # 3. Iterate over 2D planes (Z, Y, X axes)
-        for axis in range(3):
-            num_slices = quantized_volume.shape[axis]
-
-            for i in range(num_slices):
-                # ... (slice extraction logic remains the same, using current_slice and current_mask) ...
-                if axis == 0:  # XY plane (iterate through Z)
-                    current_slice = quantized_volume[i, :, :]
-                    current_mask = cropped_mask[i, :, :]
-                elif axis == 1:  # XZ plane (iterate through Y)
-                    current_slice = quantized_volume[:, i, :]
-                    current_mask = cropped_mask[:, i, :]
-                else:  # YZ plane (iterate through X)
-                    current_slice = quantized_volume[:, :, i]
-                    current_mask = cropped_mask[:, :, i]
-
-                # Only process slices that contain the lesion
-                if np.any(current_mask):
-                    try:
-                        # Compute GLCM on the 2D slice
-                        glcm = graycomatrix(
-                            current_slice,
-                            distances=[1],
-                            angles=[0, np.pi / 4, np.pi / 2, 3 * np.pi / 4],
-                            levels=num_levels,  # Use the calculated level count
-                            symmetric=True,
-                            normed=True,
-                        )
-                        contrast = graycoprops(glcm, "contrast").mean()
-                        contrast_values.append(contrast)
-                    except Exception:
-                        continue
-
-        # 4. Average the contrast values
-        if not contrast_values:
-            return 0.0
-
-        return float(np.mean(contrast_values))
-
-    @staticmethod
-    def _compute_gradient_magnitude(image: np.ndarray, mask: np.ndarray) -> float:
-        grad = np.array(np.gradient(image))
-        grad_mag = np.sqrt(np.sum(grad**2, axis=0))
-        return float(np.mean(grad_mag[mask]))
-
-    @staticmethod
-    def _compute_sphericity(mask: np.ndarray) -> float:
-        vol = np.sum(mask)
-        if vol < 10:
-            return 0.0
-        # Simple approximation
-        surface = np.sum(mask) - np.sum(ndimage.binary_erosion(mask))
-        if surface == 0:
-            return 0.0
-        return float((np.pi ** (1 / 3) * (6 * vol) ** (2 / 3)) / surface)
+        return results
