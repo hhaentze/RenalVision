@@ -132,6 +132,7 @@ class BasePreprocessor(ABC):
             data_aug = intensity_pipeline(data_aug)
 
             yield data_aug["image"], data_aug["seg"], True
+            del data_aug
 
     def stream_components(
         self,
@@ -176,6 +177,7 @@ class BasePreprocessor(ABC):
                 }
 
                 yield cropped_image, cropped_mask, metadata
+                del cropped_image, cropped_mask, component_mask
 
     @abstractmethod
     def get_config(self) -> Dict[str, Any]:
