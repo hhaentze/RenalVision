@@ -53,9 +53,16 @@ Convert raw images and masks into a feature table. Mask values (excl. 0) are use
 ```bash
 rv extract \
     --data ./data/dataset.csv \
-    --output ./data/features/radiomics_v1.parquet \
     --extractor radiomics \
-    --augment 3
+    --output ./data/features/radiomics_v1.parquet
+```
+Or alternatively, use a foundation model:
+```bash
+rv extract \
+    --data ./data/dataset.csv \
+    --output ./data/features/embeddings_v1.parquet \
+    --extractor embeddings \
+    --augment 5
 ```
 
 
