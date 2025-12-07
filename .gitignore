@@ -51,13 +51,8 @@ ENV/
 *.mha
 *.mhd
 *.nrrd
-
-# CSV data files (you may want to version control some CSVs)
-# Uncomment lines below if you want to ignore all data CSVs
-# *.csv
-# features_*.csv
-# train*.csv
-# test*.csv
+*.csv
+*.parquet
 
 # Trained models (usually too large for git)
 *.pkl
