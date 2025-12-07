@@ -5,11 +5,12 @@ and generates predictions for new images.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 from monai.data import MetaTensor
 from monai.transforms import SaveImage
+from scipy import ndimage
 
 from renal_vision.features.preprocessing import CTPreprocessor, ImageLike
 from renal_vision.features.radiomics import RadiomicsExtractor
@@ -65,6 +66,35 @@ class LesionPredictor:
         else:
             raise ValueError(f"Unknown extractor type in model config: {extractor_type}")
 
+    def _find_components(self, seg: ImageLike) -> Tuple[MetaTensor, int]:
+        """
+        Utility method to find connected components in a segmentation mask.
+
+        Returns:
+        - a mask where each connected component has a unique integer ID.
+        - number of connected components found
+        """
+
+        seg_mask = self.extractor.preprocessor._prepare_data_point(seg)
+        comp_mask = seg_mask * 0  # new empty meta tensor
+
+        # Get all unique classes (excluding background 0)
+        classes = np.unique(seg_mask)
+        classes = classes[classes > 0]
+
+        comp_count = 0
+        for class_id in classes:
+            # Create binary mask for this class
+            class_mask = seg == class_id
+
+            # Find connected components
+            labeled_mask, num_comp = ndimage.label(class_mask)
+            for class_comp_id in range(1, num_comp + 1):
+                comp_count += 1
+                comp_mask[labeled_mask == class_comp_id] = comp_count
+
+        return comp_mask, comp_count
+
     def infer_lesion(
         self,
         image: ImageLike,
@@ -76,16 +106,27 @@ class LesionPredictor:
 
         Returns a dictionary with the prediction and probability.
         """
-        # 1. Extract Features
-        lesion_features = self.extractor.extract(image, seg, augment=False)
 
-        if not lesion_features:
-            raise ValueError("No valid lesions found in input segmentation.")
-        if len(lesion_features) > 1:
+        # 1. Check Number of Lesions
+        _, num_lesions = self._find_components(seg)
+        if num_lesions == 0:
+            raise ValueError("No lesions found in input segmentation.")
+        if num_lesions > 1:
             raise ValueError(
-                f"Found {len(lesion_features)} different lesions.",
+                f"Found {num_lesions} different lesions.",
                 "For predicting more than one lesion please use infer_mask.",
             )
+
+        # 2. Extract Features
+        lesion_features = self.extractor.extract(image, seg, augment=False)
+        if num_lesions == 0:
+            raise ValueError(
+                "Extractor could not handle lesion. Volume might be too small.",
+                f"Supported min_voxels: {self.extractor.min_voxels}",
+            )
+        if num_lesions > 1:
+            raise Exception("This should never happen.")
+
         target_lesion = lesion_features[0]
 
         # 2. Prepare Feature Vector
@@ -131,14 +172,10 @@ class LesionPredictor:
         # 1. Load/Cast segmentation of to be classified target lesions
         seg_obj = self.extractor.preprocessor._prepare_data_point(seg)
 
-        # 2. separate connected components in source mask and asign ids
+        # 2. separate connected components in source mask and asign unique ids
         # (we need those for step 4)
-        components = self.extractor._find_components(seg_obj)
-        components = [c[0] for c in components]
-        labeled_mask = seg_obj * 0  # new empty meta tensor
-        for lesion_id, comp in enumerate(components, start=1):
-            labeled_mask[comp != 0] = lesion_id
-        print(f"Extracting features for {len(components)} lesions")
+        labeled_mask, num_comp = self._find_components(seg_obj)
+        print(f"Extracting features for {num_comp} lesions")
 
         # 3. extract features
         lesion_features = self.extractor.extract(image, labeled_mask, augment=False)
@@ -156,9 +193,10 @@ class LesionPredictor:
             prediction = predict(self.bundle, X)[0]
 
             # the lesion ids that we created in (2) are now stored in features["class_id"]
-            if features["class_id"] in range(1, len(components) + 1):
-                prediction_mask[labeled_mask == features["class_id"]] = prediction
-                prediction_mask[labeled_mask == features["class_id"]] += 1
+            if features["class_id"] in range(1, num_comp + 1):
+                prediction_mask[labeled_mask == features["class_id"]] = (
+                    prediction + 1
+                )  # +1 to avoid 0 background
             else:
                 raise ValueError(f"Unknown class id: {features['class_id']}")
 

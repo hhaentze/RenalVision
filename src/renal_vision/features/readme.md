@@ -37,7 +37,11 @@ Handles the "Scale".
 Access the Data Engine via the unified `rv` command.
 
 ### Basic Extraction
-Extract a feature vector for each connected component in the segmentation mask. By default the the values of the segmentation mask are stored as class ids. If you want to configure this you can pass your own label mapping. For example in the KiTS data we would like to ignore kidney masks and include tumors and cysts, so we create a custom label mapping: `{1:0,2:1,3:2}`.
+Extract a feature vector for each connected component in the segmentation mask. The the values of the segmentation masks (minus one) are stored as class ids. If you want to configure this you can pass your own label mapping. For example in the KiTS data we would like to ignore kidney masks and include tumors and cysts, so we create a custom label mapping: `{1:0,2:1,3:2}`.
+
+**Important:**
+* Indexing of classes in the segmentation masks starts at 1
+* Indexing of classes in the extracted features starts at 0
 ```bash
 rv extract \
     --data ./data/train_data.csv \

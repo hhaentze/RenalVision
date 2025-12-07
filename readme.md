@@ -44,7 +44,11 @@ pip install -e .`
 The platform exposes a unified command-line interface: rv.
 
 ### 1. Extract Features (Data Engine)
-Convert raw images and masks into a feature table.
+Convert raw images and masks into a feature table. Mask values (excl. 0) are use to deduct class_id's that are assigned to the feature vectors.
+
+**Important:**
+* Indexing of classes in the segmentation masks starts at 1
+* Indexing of classes in the extracted feature vectors starts at 0
 
 ```bash
 rv extract \
