@@ -14,9 +14,9 @@ def run_extract(args: argparse.Namespace) -> None:
 
     import pandas as pd
 
+    from .base import BaseFeatureExtractor
     from .dataset import FeatureDatasetProcessor
-    from .preprocessing import CTPreprocessor
-    from .radiomics import RadiomicsExtractor
+    from .preprocessing import BasePreprocessor
 
     def load_label_map(json_path: Optional[str]) -> Dict[int, int]:
         """Load label mapping from JSON file."""
@@ -43,16 +43,28 @@ def run_extract(args: argparse.Namespace) -> None:
     # We construct this explicitly to pass CLI arguments
     label_map = load_label_map(args.label_map)
 
-    # Note: For Radiomics, normalize=False is standard.
-    # For future Neural Networks, you might default this to True in the args logic.
-    preprocessor = CTPreprocessor(label_map=label_map, normalize=args.normalize)
-
     # 3. Instantiate Extractor
+    preprocessor: BasePreprocessor
+    extractor: BaseFeatureExtractor
     if args.extractor == "radiomics":
+        from .preprocessing import CTPreprocessor
+        from .radiomics import RadiomicsExtractor
+
+        preprocessor = CTPreprocessor(label_map=label_map, normalize=args.normalize)
         extractor = RadiomicsExtractor(
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
             feature_names=None,  # Default to all
+        )
+
+    elif args.extractor == "embeddings":
+        from .fmcib_embeddings import EmbeddingExtractor
+        from .preprocessing import StaticCropPreprocessor
+
+        preprocessor = StaticCropPreprocessor(label_map=label_map, normalize=args.normalize)
+        extractor = EmbeddingExtractor(
+            preprocessor=preprocessor,
+            min_voxels=args.min_voxels,
         )
     else:
         # Placeholder for future extractors
@@ -86,7 +98,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics"],
+        choices=["radiomics", "embeddings"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(

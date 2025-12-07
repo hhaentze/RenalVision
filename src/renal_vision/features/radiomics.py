@@ -70,7 +70,7 @@ class RadiomicsExtractor(BaseFeatureExtractor):
 
         # Safety check (should be caught by min_voxels, but good for robustness)
         if lesion_voxels.size == 0:
-            return {f.value: 0.0 for f in self._active_features}
+            raise ValueError("Lesion mask is empty during feature extraction.")
 
         for feature in self._active_features:
             if feature == RadiomicsFeature.MEAN_HU:
