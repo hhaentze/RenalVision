@@ -40,6 +40,10 @@ cd RenalVision
 pip install -e .`
 ```
 
+## 📋 TLDR
+Checkout our tutorials on how to create a binary [Tumor/Cyst](notebooks/demo_binary.ipynb)
+or a multiclass [Lesion-Subtype](notebooks/demo_multiclass.ipynb) classificator.
+
 ## 🚀 Quick Start (CLI)
 The platform exposes a unified command-line interface: rv.
 
