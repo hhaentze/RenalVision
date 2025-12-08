@@ -12,6 +12,7 @@ from renal_vision.features.dataset import FeatureDatasetProcessor
 from renal_vision.shared.metrics import (
     compute_metrics,
     plot_confusion_matrix,
+    plot_multiclass_pr_curve,
     plot_multiclass_roc,
 )
 
@@ -111,6 +112,14 @@ def run_evaluation(
         n_classes=model_bundle.n_classes,
         class_names=class_names_list,
         output_path=str(output_path / "roc_curves.png"),
+    )
+    # PR Curves
+    plot_multiclass_pr_curve(
+        y_true=y_true,
+        y_proba=y_proba,
+        n_classes=model_bundle.n_classes,
+        class_names=class_names_list,
+        output_path=str(output_path / "pr_curves.png"),
     )
 
     print(f"Results saved to {output_dir}")
