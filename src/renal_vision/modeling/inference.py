@@ -12,6 +12,7 @@ from monai.data import MetaTensor
 from monai.transforms import SaveImage
 from scipy import ndimage
 
+from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
 from renal_vision.features.preprocessing import CTPreprocessor, ImageLike
 from renal_vision.features.radiomics import RadiomicsExtractor
 
@@ -25,13 +26,25 @@ class LesionPredictor:
     2. Classification (using trained model)
     """
 
-    def __init__(self, model_path: Union[str, Path]):
-        self.model_path = Path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"Model not found: {model_path}")
+    def __init__(self, model_identifier: Union[str, Path]):
+        # Load model from bundle zoo
+        if model_identifier in ImplementedModels.__members__:
+            self.bundle = load_model_bundle(ImplementedModels[model_identifier])
 
-        print(f"Loading model bundle from {model_path}...")
-        self.bundle = ModelBundle.load(self.model_path)
+        # Load model from custom path
+        elif Path(model_identifier).is_file():
+            self.bundle = ModelBundle.load(model_identifier)
+
+        else:
+            # Try to suggest a similar model identifier
+            similar_model = suggest_similar_enum(model_identifier, ImplementedModels)
+            if similar_model:
+                raise ValueError(
+                    f"Unknown model identifier: '{model_identifier}'. "
+                    f"Did you mean '{similar_model.name}'?"
+                )
+            else:
+                raise ValueError(f"Model not found: '{model_identifier}'.")
 
         # Reconstruct the feature extraction pipeline used during training
         self.extractor = self._reconstruct_extractor(self.bundle.extractor_config)

@@ -32,7 +32,7 @@ def run_eval(args: argparse.Namespace) -> None:
 def run_infer(args: argparse.Namespace) -> None:
     from . import inference
 
-    predictor = inference.LesionPredictor(model_path=args.model)
+    predictor = inference.LesionPredictor(model_identifier=args.model)
 
     if args.output:
         # Multi-lesion / file output mode
