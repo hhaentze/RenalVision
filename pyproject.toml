@@ -45,6 +45,9 @@ dev = [
 rv = "renal_vision.cli:main"
 renal-vision = "renal_vision.cli:main"
 
+[tool.setuptools.package-data]
+"renal_vision.bundles" = ["*/*.pkl"]
+
 ############### Linting & Formatting ###############
 
 [tool.ruff]
