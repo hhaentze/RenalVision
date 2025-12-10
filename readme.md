@@ -12,7 +12,7 @@
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 
 <a href="https://www.comfort-ai.eu/for-patients/kidney-cancer">
-  <img alt="Classification Paper" src="https://img.shields.io/badge/paper-classification-red.svg">
+  <img alt="website" src="https://img.shields.io/badge/Website-COMFORT-darkblue.svg">
 </a>
 
 </div>
