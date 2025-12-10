@@ -159,11 +159,10 @@ class LesionPredictor:
         class_name = self.bundle.class_names.get(pred_class, f"Class {pred_class}")
 
         return {
-            "lesion_id": target_lesion.get("lesion_id"),
             "class_id": pred_class,
             "class_name": class_name,
-            "probability": pred_proba.tolist(),
             "confidence": float(np.max(pred_proba)),
+            "probability": pred_proba.tolist(),
             "volume_voxels": target_lesion.get("volume_voxels"),
         }
 
