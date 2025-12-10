@@ -44,6 +44,8 @@ pip install -e .`
 Checkout our tutorials on how to create a binary [Tumor/Cyst](notebooks/demo_binary.ipynb)
 or a multiclass [Lesion-Subtype](notebooks/demo_multiclass.ipynb) classificator.
 
+Renal Vision comes with two pre-trained models that you can use from the get-go. Read more about that in the [Bundles](src/renal_vision/bundles) section.
+
 ## 🚀 Quick Start (CLI)
 The platform exposes a unified command-line interface: rv.
 
@@ -68,7 +70,7 @@ rv extract \
     --extractor embeddings \
     --augment 5
 ```
-
+This will save a parquet file as well as a summary of the extraction configurations the specified path.
 
 ### 2. Train & Evaluate Model (Logic Engine)
 Utilize the extracted features.
@@ -76,6 +78,7 @@ Utilize the extracted features.
 ```bash
 rv train \
     --data ./data/features/radiomics_v1.parquet \
+    --extractor-config ./data/features/radiomics_v1.config.json \
     --model xgboost \
     --output-dir ./models/v1
 
@@ -96,39 +99,53 @@ rv infer \
     --output ./results/prediction_001.nii.gz
 ```
 
+To run our pretrained models simply set --model to either `TUMOR_CYST`or `HISTOLOGY_SUBTYPE`.
+
 ##
 
 ## 🐍 Python API
 RenalVision is designed to be used programmatically for custom pipelines.
 
-### Loading Features for Custom Training
+### Inference
 ```python
-
-from src.features.dataset import FeatureDatasetProcessor
-
-# Load the Parquet store as a Pandas DataFrame
-# Contains metadata (case_id, lesion_id) + feature columns
-df = FeatureDatasetProcessor.load_features("./data/features/radiomics_v1.parquet")
-
-print(df.head())
-Running Inference in Your Script
-Python
-
-from src.modeling.inference import LesionPredictor
+from renal_vision.modeling.inference import LesionPredictor
 
 # 1. Initialize Predictor (Auto-loads extractor config from the model)
-predictor = LesionPredictor(model_path="./models/v1/model.pkl")
+predictor = LesionPredictor(model_identifier="model.pkl")
 
 # 2. Predict a single lesion
 result = predictor.infer_lesion(image="scan.nii.gz", seg="lesion_mask.nii.gz")
 print(f"Prediction: {result['class_name']} ({result['confidence']:.1%})")
 
 # 3. Predict full mask (multi-lesion)
-predictor.infer_mask(
+mask = predictor.infer_mask(
     image="scan.nii.gz",
     seg="full_mask.nii.gz",
     output_path="predictions.nii.gz"
 )
+```
+
+### Preprocessing
+If you want to build your own data loader consider using one of our prepocessors, which efficiently combine repeated augmentation and sampling of multiple annotated target regions.
+
+```python
+from renal_vision.features.preprocessing import CropPreprocessor
+
+# initialise
+preprocessor = CropPreprocessor()
+
+# load image and mask with base augmentations
+img, seg = preprocessor("img.nii","seg.nii", augment=False)
+
+# load with n random augmentations
+data_stream = preprocessor.stream_augmented("img.nii","seg.nii",n_augmentations = 5)
+for img, seg, is_augmented in data_stream:
+  # Do stuff
+
+# crop on all individual lesions
+component_stream = preprocessor.stream_components(img, seg,  min_voxels = 10):
+for lesion, lesion_mask, lesion_id, meta in component_stream:
+  # Do stuff
 ```
 
 ## 🔌 Expandability

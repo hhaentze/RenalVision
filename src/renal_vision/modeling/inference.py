@@ -13,7 +13,12 @@ from monai.transforms import SaveImage
 from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
-from renal_vision.features.preprocessing import CTPreprocessor, ImageLike
+from renal_vision.features.preprocessing import (
+    CropPreprocessor,
+    CTPreprocessor,
+    ImageLike,
+    StaticCropPreprocessor,
+)
 from renal_vision.features.radiomics import RadiomicsExtractor
 
 from .models import ModelBundle, predict, predict_proba
@@ -52,30 +57,28 @@ class LesionPredictor:
     def _reconstruct_extractor(self, config: Dict[str, Any]) -> Any:
         """
         Factory method to instantiate the correct extractor from config dictionary.
-        Handles JSON type conversion (e.g., string keys back to int).
         """
-        extractor_type = config.get("type")
 
         # 1. Reconstruct Preprocessor
-        # The extractor config contains the preprocessor config
-        prep_config = config.get("preprocessor", {})
-
-        # JSON converts dict keys to strings. We must convert label_map keys back to int.
-        if "label_map" in prep_config and prep_config["label_map"]:
-            raw_map = prep_config["label_map"]
-            prep_config["label_map"] = {int(k): int(v) for k, v in raw_map.items()}
-
-        # Instantiate Preprocessor (currently only CTPreprocessor supported)
-        preprocessor = CTPreprocessor(**prep_config)
+        prep_config = config["preprocessor"]
+        if prep_config["name"] == "CTPreprocessor":
+            preprocessor = CTPreprocessor(**{k: v for k, v in prep_config.items() if k != "name"})
+        elif prep_config["name"] == "CropPreprocessor":
+            preprocessor = CropPreprocessor(**{k: v for k, v in prep_config.items() if k != "name"})
+        elif prep_config["name"] == "StaticCropPreprocessor":
+            preprocessor = StaticCropPreprocessor(
+                **{k: v for k, v in prep_config.items() if k != "name"}
+            )
+        else:
+            raise ValueError(f"Unknown preprocessort type in model config: {prep_config['name']}")
 
         # 2. Instantiate Extractor
+        extractor_type = config["type"]
         if extractor_type == "radiomics":
             # Filter out keys that aren't arguments to __init__
             valid_keys = {"feature_names", "min_voxels"}
             ext_kwargs = {k: v for k, v in config.items() if k in valid_keys}
-
             return RadiomicsExtractor(preprocessor=preprocessor, **ext_kwargs)
-
         else:
             raise ValueError(f"Unknown extractor type in model config: {extractor_type}")
 
@@ -206,8 +209,9 @@ class LesionPredictor:
             prediction = predict(self.bundle, X)[0]
 
             # the lesion ids that we created in (2) are now stored in features["class_id"]
-            if features["class_id"] in range(1, num_comp + 1):
-                prediction_mask[labeled_mask == features["class_id"]] = (
+            # attention: indexing of features and prediction start at 0, not 1
+            if features["class_id"] in range(0, num_comp):
+                prediction_mask[labeled_mask == features["class_id"] + 1] = (
                     prediction + 1
                 )  # +1 to avoid 0 background
             else:

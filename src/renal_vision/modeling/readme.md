@@ -44,3 +44,4 @@ Use `eval.py` (via `rv eval`) to generate standard performance reports from a te
 * `metrics.json`: Raw values (Accuracy, F1, Sensitivity, Specificity).
 * `confusion_matrix.png`: Seaborn visualization of class confusion.
 * `roc_curves.png`: Multi-class ROC curves (One-vs-Rest) with Micro/Macro averages.
+* `pr_curves.png`: Multi-class Precision-Recall curves (One-vs-Rest) with Micro/Macro averages.

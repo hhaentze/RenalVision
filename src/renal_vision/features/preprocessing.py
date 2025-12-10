@@ -276,7 +276,6 @@ class CTPreprocessor(BasePreprocessor):
             "target_spacing": self.target_spacing,
             "window_center": self.window_center,
             "window_width": self.window_width,
-            "label_map": self.label_map,
             "normalize": self.normalize,
         }
 
@@ -292,7 +291,6 @@ class CropPreprocessor(BasePreprocessor):
             "target_spacing": self.target_spacing,
             "window_center": self.window_center,
             "window_width": self.window_width,
-            "label_map": self.label_map,
             "normalize": self.normalize,
         }
 

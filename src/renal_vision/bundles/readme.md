@@ -10,16 +10,19 @@ rv infer
 
 or with our python API:
 ```python
-from renalvision.infer import infer_lesion, infer_mask
+from renal_vision.modeling.inference import LesionPredictor
+from renal_vision.bundles import ImplementedModels
 
-infer_mask(image_path, seg_path, model = identifier)
+# Either use our enum class
+predictor1 = LesionPredictor(model_identifier=ImplementedModels.HISTOLOGY_SUBTYPE)
 
+# Or just pass the string directly
+predictor2 =  LesionPredictor(model_identifier="TUMOR_CYST")
 ```
 
 
-
 ### 1. Radiomics based Tumor/Cyst classifier
-- identifier: **tumor_cyst**
+- identifier: **TUMOR_CYST**
 - xgboost model
 - trained on KiTS & Charité (80%)
 - validated on KiTS & Charité (20%)
@@ -41,7 +44,7 @@ Classes:
 </div>
 
 ### 2 Radiomics based histology-subtype classifier
-- identifier: **histology_subtype**
+- identifier: **HISTOLOGY_SUBTYPE**
 - xgboost model
 - trained on KiTS & Charité (80%)
 - validated on KiTS & Charité (20%)

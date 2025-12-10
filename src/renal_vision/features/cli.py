@@ -50,18 +50,27 @@ def run_extract(args: argparse.Namespace) -> None:
         from .preprocessing import CTPreprocessor
         from .radiomics import RadiomicsExtractor
 
-        preprocessor = CTPreprocessor(label_map=label_map, normalize=args.normalize)
+        preprocessor = CTPreprocessor(label_map=label_map, normalize=False)
         extractor = RadiomicsExtractor(
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
             feature_names=None,  # Default to all
         )
 
-    elif args.extractor == "embeddings":
+    elif args.extractor == "embeddings_static":
         from .fmcib_embeddings import EmbeddingExtractor
         from .preprocessing import StaticCropPreprocessor
 
-        preprocessor = StaticCropPreprocessor(label_map=label_map, normalize=args.normalize)
+        preprocessor = StaticCropPreprocessor(label_map=label_map, normalize=True)
+        extractor = EmbeddingExtractor(
+            preprocessor=preprocessor,
+            min_voxels=args.min_voxels,
+        )
+    elif args.extractor == "embeddings_dynamic":
+        from .fmcib_embeddings import EmbeddingExtractor
+        from .preprocessing import CropPreprocessor
+
+        preprocessor = CropPreprocessor(label_map=label_map, normalize=True)
         extractor = EmbeddingExtractor(
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
@@ -98,7 +107,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "embeddings"],
+        choices=["radiomics", "embeddings_static", "embeddings_dynamic"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
