@@ -5,6 +5,8 @@ Acts as the entry point for batch feature extraction.
 
 import argparse
 
+from renal_vision.shared.parser_config import get_base_parser
+
 
 # ================= Logic =================
 def run_extract(args: argparse.Namespace) -> None:
@@ -147,10 +149,7 @@ def add_subparsers(subparsers: argparse._SubParsersAction) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Renal Vision: Feature Extraction Module",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    parser = get_base_parser("Feature Extraction Module")
     config_extract(parser)
     args = parser.parse_args()
     args.func(args)

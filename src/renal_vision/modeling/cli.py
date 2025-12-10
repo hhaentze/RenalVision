@@ -4,6 +4,8 @@ Main command-line interface for the Cyst Classifier.
 
 import argparse
 
+from renal_vision.shared.parser_config import get_base_parser
+
 
 # ================= Logic =================
 def run_train(args: argparse.Namespace) -> None:
@@ -93,10 +95,7 @@ def add_subparsers(subparsers: argparse._SubParsersAction) -> None:
 
 # ================= Standalone CLI =================
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Renal Vision: Classifier Module",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    parser = get_base_parser("Classifier Module")
     subparsers = parser.add_subparsers(dest="command", required=True, help="Command to run")
     add_subparsers(subparsers)
 
