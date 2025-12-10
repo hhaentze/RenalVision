@@ -4,10 +4,22 @@
 ci: lint type test
 
 # Installation
+define INSTALL_RADIOMICS_CORE
+	@echo "--------------------------------------------------"
+	@echo "🔧 Pre-installing PyRadiomics Build Dependencies..."
+	@echo "--------------------------------------------------"
+	pip install "numpy>=1.26.0,<2.0.0" versioneer
+	pip install pyradiomics --no-build-isolation
+endef
+
 install:
+	$(INSTALL_RADIOMICS_CORE)
+	pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 	pip install -e .
 
 install-dev:
+	$(INSTALL_RADIOMICS_CORE)
+	pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 	pip install -e ".[dev]"
 	pre-commit install
 

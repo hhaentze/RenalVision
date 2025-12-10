@@ -30,14 +30,17 @@ This platform allows researchers to decouple the heavy lifting of image processi
 * **Explainable-Ready:** Built-in support for classical ML (Logistic Regression, Decision Trees) and Gradient Boosting (XGBoost).
 
 ## 🛠️ Installation
-
+One of our depencies 'PyRadiomics' is unfortunately not well maintained and prevents us from running a simple pip install for python versions >= 3.10.
+You need to clone the repo and install it yourself with the help of make:
 ```bash
 # Clone the repository
 git clone https://github.com/hhaentze/RenalVision.git
 cd RenalVision
 
 # Install in editable mode
-pip install -e .`
+make install
+# or for development
+make install-dev
 ```
 
 ## 📋 TLDR
