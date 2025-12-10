@@ -56,9 +56,9 @@ def config_train(parser: argparse.ArgumentParser) -> None:
     """Configures an existing parser for 'train' and binds the logic."""
     parser.add_argument("--data", required=True, help="Path to training features (Parquet)")
     parser.add_argument("--output-dir", required=True, help="Folder to save model.pkl")
+    parser.add_argument("--extractor-config", required=True, help="JSON config from features")
     parser.add_argument("--model", choices=["logistic", "tree", "xgboost"], default="logistic")
     parser.add_argument("--class-config", help="JSON map of class names (e.g. {'0': 'Tumor'})")
-    parser.add_argument("--extractor-config", help="JSON config from features (optional)")
     parser.add_argument("--depth", type=int, default=5, help="Tree depth")
     parser.set_defaults(func=run_train)
 

@@ -3,6 +3,7 @@ Dataset-level processing logic.
 Handles batch extraction, augmentation loops, and data storage.
 """
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -31,6 +32,7 @@ class FeatureDatasetProcessor:
         """
         Run extraction on all rows in input_df.
         Saves the result to a Parquet file.
+        Saves the extractor config to a Config file.
         """
         results: List[Dict[str, Any]] = []
 
@@ -97,7 +99,10 @@ class FeatureDatasetProcessor:
             print(f"Note: Enforcing .parquet extension. Output will be: {path_obj}")
 
         path_obj.parent.mkdir(parents=True, exist_ok=True)
+        path_config_obj = path_obj.with_name(path_obj.stem + ".config.json")
 
         # Save
         df.to_parquet(path_obj, index=False)
-        print(f"Saved {len(df)} lesions to {path_obj}")
+        with open(path_config_obj, "w") as f:
+            json.dump(self.extractor.get_config(), f, indent=4)
+        print(f"Saved {len(df)} lesions to {path_obj} and {path_config_obj}")

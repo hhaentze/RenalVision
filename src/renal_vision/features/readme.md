@@ -58,17 +58,4 @@ The resulting Parquet file contains flat rows with metadata and features:
 | case_01 | image1.nii.gz| 1         | 1        | ... | 85.4    | 0.65       |True      |
 | case_01 | image1.nii.gz| 2         | 2        | ... | 4.2     | 0.98       |True      |
 
-
-## 🔌 Extending for Foundation Models
-To add a new feature extractor (e.g., FMCIB):
-
-**1. Create** `src/renal_vision/features/neural.py`:Inherit from `BaseFeatureExtractor`.
-
-**2. Implement** `_extract_single_lesion`:
-* Take the image and lesion_mask (MetaTensors).
-* Calculate the bounding box.
-* Crop and resize to target tensor size (e.g., $50 \times 50 \times 50$).
-* Pass through your PyTorch model.
-* Return the flattened embedding vector (e.g., {"emb_0": 0.1, "emb_1": ...}).
-
-**3. Register**: Add the new key (e.g., "fmcib") to the factory method in `src/renal_vision/modeling/inference.py`.
+Additionally, a copy of all extractor settings is saved next to the feature file.

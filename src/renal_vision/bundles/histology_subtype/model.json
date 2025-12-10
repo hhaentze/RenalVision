@@ -97,14 +97,7 @@
         "original_shape_Sphericity",
         "original_shape_SurfaceArea",
         "original_shape_SurfaceVolumeRatio",
-        "original_shape_VoxelVolume",
-        "patient_number",
-        "exam_key",
-        "age",
-        "tumor_Maximum2DDiameterColumn",
-        "tumor_Maximum2DDiameterRow",
-        "tumor_Maximum2DDiameterSlice",
-        "tumor_Maximum2DDiameter"
+        "original_shape_VoxelVolume"
     ],
     "extractor_config": {
         "type": "radiomics",
@@ -196,15 +189,20 @@
             "original_shape_Sphericity",
             "original_shape_SurfaceArea",
             "original_shape_SurfaceVolumeRatio",
-            "original_shape_VoxelVolume",
-            "patient_number",
-            "exam_key",
-            "age",
-            "tumor_Maximum2DDiameterColumn",
-            "tumor_Maximum2DDiameterRow",
-            "tumor_Maximum2DDiameterSlice",
-            "tumor_Maximum2DDiameter"
-        ]
+            "original_shape_VoxelVolume"
+        ],
+        "min_voxels": 10,
+        "preprocessor": {
+            "name": "CTPreprocessor",
+            "target_spacing": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "window_center": 40,
+            "window_width": 400,
+            "normalize": false
+        }
     },
     "log_transform_features": []
 }

@@ -13,11 +13,7 @@ from sklearn.base import BaseEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
-
-try:
-    from xgboost import XGBClassifier
-except ImportError:
-    XGBClassifier = None  # type: ignore
+from xgboost import XGBClassifier
 
 
 class ModelType(Enum):
