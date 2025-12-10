@@ -5,9 +5,9 @@
         "0": "ccRCC",
         "1": "pRCC",
         "2": "chrRCC",
-        "3": "oncocytoma",
-        "4": "cyst",
-        "5": "other"
+        "3": "Oncocytoma",
+        "4": "Cyst",
+        "5": "Other"
     },
     "feature_names": [
         "original_firstorder_10Percentile",

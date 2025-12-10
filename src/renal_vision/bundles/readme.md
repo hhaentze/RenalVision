@@ -48,7 +48,7 @@ Classes:
 - xgboost model
 - trained on KiTS & Charité (80%)
 - validated on KiTS & Charité (20%)
-* F1: 0.82
+* F1: 0.74
 
 Classes:
 ```python
