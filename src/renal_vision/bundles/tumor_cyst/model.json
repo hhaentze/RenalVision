@@ -2,8 +2,8 @@
     "model_type": "xgboost",
     "n_classes": 2,
     "class_names": {
-        "0": "Cyst",
-        "1": "Tumor"
+        "0": "Tumor",
+        "1": "Cyst"
     },
     "feature_names": [
         "original_firstorder_10Percentile",

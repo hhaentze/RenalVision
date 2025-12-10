@@ -113,16 +113,26 @@ from renal_vision.modeling.inference import LesionPredictor
 # 1. Initialize Predictor (Auto-loads extractor config from the model)
 predictor = LesionPredictor(model_identifier="model.pkl")
 
-# 2. Predict a single lesion
-result = predictor.infer_lesion(image="scan.nii.gz", seg="lesion_mask.nii.gz")
-print(f"Prediction: {result['class_name']} ({result['confidence']:.1%})")
-
-# 3. Predict full mask (multi-lesion)
+# 2. Predict full mask (multi-lesion)
 mask = predictor.infer_mask(
     image="scan.nii.gz",
     seg="full_mask.nii.gz",
     output_path="predictions.nii.gz"
 )
+
+
+# 3. Predict a single lesion
+result = predictor.infer_lesion(image="scan.nii.gz", seg="lesion_mask.nii.gz")
+print(result)
+```
+```json
+{
+  'class_id': 0,                    # predicted class
+  'class_name': 'Tumor',            # predicted class name
+  'confidence': 0.997,              # proability of predicted class
+  'probability': [[0.997, 0.003]],  # proabilities of all classes
+  'volume_voxels': 8726             # voxel volumes of target lesions
+ }
 ```
 
 ### Preprocessing
