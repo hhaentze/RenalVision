@@ -31,10 +31,12 @@ class LesionPredictor:
     2. Classification (using trained model)
     """
 
-    def __init__(self, model_identifier: Union[str, Path]):
+    def __init__(self, model_identifier: Union[str, Path, ImplementedModels]):
         # Load model from bundle zoo
-        if model_identifier in ImplementedModels.__members__:
-            self.bundle = load_model_bundle(ImplementedModels[model_identifier])
+        if isinstance(model_identifier, ImplementedModels) or (
+            model_identifier in ImplementedModels.__members__
+        ):
+            self.bundle = load_model_bundle(model_identifier)
 
         # Load model from custom path
         elif Path(model_identifier).is_file():

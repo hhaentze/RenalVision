@@ -9,7 +9,7 @@ from renal_vision.modeling.models import ModelBundle
 T = TypeVar("T", bound=Enum)
 
 
-class ImplementedModels(str, Enum):
+class ImplementedModels(Enum):
     TUMOR_CYST = "tumor_cyst"
     HISTOLOGY_SUBTYPE = "histology_subtype"
 
@@ -17,7 +17,7 @@ class ImplementedModels(str, Enum):
 def load_model_bundle(model_identifier: ImplementedModels) -> ModelBundle:
     if isinstance(model_identifier, str):
         try:
-            model_identifier = ImplementedModels(model_identifier)
+            model_identifier = ImplementedModels[model_identifier]
         except ValueError:
             raise ValueError(
                 f"Unknown model identifier: '{model_identifier}'. "
