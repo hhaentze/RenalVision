@@ -24,6 +24,7 @@ from monai.transforms import (
     RandGaussianNoised,
     RandGaussianSmoothd,
     RandRotate90d,
+    Resized,
     ScaleIntensityRanged,
     Spacingd,
 )
@@ -219,9 +220,7 @@ class CTPreprocessor(BasePreprocessor):
                 dtype=np.int16,
             ),
             # rough crop to non-zero seg region to speed up subsequent processing
-            CropForegroundd(
-                keys=["image", "seg"], mode=("bilinear", "nearest"), source_key="seg", margin=20
-            ),
+            CropForegroundd(keys=["image", "seg"], source_key="seg", margin=20),
         ]
 
         # 2. Augmentation
@@ -256,11 +255,7 @@ class CTPreprocessor(BasePreprocessor):
         ]
 
         # 4. Cropping
-        crop_transforms = [
-            CropForegroundd(
-                keys=["image", "seg"], mode=("bilinear", "nearest"), source_key="seg", margin=5
-            )
-        ]
+        crop_transforms = [CropForegroundd(keys=["image", "seg"], source_key="seg", margin=5)]
 
         # 5. Initialize Base Class
         super().__init__(
@@ -324,9 +319,7 @@ class CropPreprocessor(BasePreprocessor):
                 dtype=np.int16,
             ),
             # rough crop to non-zero seg region to speed up subsequent processing
-            CropForegroundd(
-                keys=["image", "seg"], mode=("bilinear", "nearest"), source_key="seg", margin=20
-            ),
+            CropForegroundd(keys=["image", "seg"], source_key="seg", margin=20),
         ]
 
         # 2. Augmentation Transforms
@@ -369,6 +362,11 @@ class CropPreprocessor(BasePreprocessor):
                 margin=15,
                 min_shape=[50, 50, 50],
                 allow_smaller=True,
+            ),
+            Resized(
+                keys=["image", "seg"],
+                mode=["area", "nearest"],
+                spatial_size=[50, 50, 50],
             ),
         ]
 
