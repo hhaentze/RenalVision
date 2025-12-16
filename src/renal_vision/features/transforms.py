@@ -1,12 +1,13 @@
 # Copyright 2025 Hartmut Häntze
 
 from collections.abc import Callable, Sequence
-from typing import Union
+from typing import Dict, Hashable, Mapping, Union
 
 import numpy as np
 import torch
 from monai.config import IndexSelection, KeysCollection, SequenceStr
-from monai.transforms import CropForeground, CropForegroundd
+from monai.config.type_definitions import NdarrayOrTensor
+from monai.transforms import CropForeground, CropForegroundd, MapTransform, Transform
 from monai.transforms.utils import (
     compute_divisible_spatial_size,
     generate_spatial_bounding_box,
@@ -100,3 +101,33 @@ class MinimumCropForegroundd(CropForegroundd):
             min_shape=min_shape,
             **pad_kwargs,
         )
+
+
+class ConditionalAddChannel(Transform):
+    """
+    Adds a channel dimension to the input if it does not have one (ndim=3).
+    """
+
+    def __call__(self, data: NdarrayOrTensor) -> NdarrayOrTensor:
+        # Check for 3 dimensions (Spatial only)
+        if data.ndim == 3:
+            # Add channel dimension at index 0
+            # Slicing with None is valid for both Tensor and ndarray
+            return data[None, ...]
+        return data
+
+
+class ConditionalAddChanneld(MapTransform):
+    """
+    Dictionary-based transform to conditionally add a channel dimension.
+    """
+
+    def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False) -> None:
+        super().__init__(keys, allow_missing_keys)
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key in self.key_iterator(d):
+            if d[key].ndim == 3:
+                d[key] = d[key][None, ...]
+        return d
