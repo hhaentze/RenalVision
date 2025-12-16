@@ -38,7 +38,6 @@ dev = [
     "ipykernel>=6.0.0",
 
     # Linting and Formatting
-    "black[jupyter]>=24.3.0",
     "ruff>=0.1.0",
     "nbqa>=1.7.0",
     "pre-commit>=3.3.0",
@@ -83,9 +82,6 @@ known-first-party = ["renal_vision"]
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["F841", "E402", "PLR0913"]
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
 
 ############### Type Checking ###############
 
@@ -101,11 +97,16 @@ disable_error_code = ["no-any-return"] # Dangerous! By disabling this we open th
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "--verbose"
+addopts = "--cov --cov-report=xml --cov-report=html --cov-report=term"
+filterwarnings = [
+    "ignore:builtin type SwigPyPacked:DeprecationWarning",
+    "ignore:builtin type SwigPyObject:DeprecationWarning",
+    "ignore:builtin type swigvarlink:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
-source = ["modeling"]
+source = ["renal_vision"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
