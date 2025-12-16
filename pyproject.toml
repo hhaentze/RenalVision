@@ -103,6 +103,7 @@ filterwarnings = [
     "ignore:builtin type SwigPyObject:DeprecationWarning",
     "ignore:builtin type swigvarlink:DeprecationWarning",
 ]
+markers = ["integration"]
 
 [tool.coverage.run]
 branch = true
