@@ -26,8 +26,6 @@ install-dev:
 # Quality Checks
 lint:
 	ruff check src tests
-	ruff check --select I src tests
-	black --check src tests
 	ruff format --check src tests
 
 type:
@@ -40,7 +38,6 @@ test:
 # Formatting (Fixes code)
 format:
 	ruff check --select I,F401 --fix src tests
-	black src tests
 	ruff format src tests
 
 # Cleaning (Cross-platform via Python)

@@ -9,11 +9,9 @@
 <div align="center">
 <a href="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml"><img alt="Continuous Integration" src="https://github.com/hhaentze/CystClassifier/actions/workflows/ci.yaml/badge.svg"></a>
 <a href="https://github.com/hhaentze/RenalVision/blob/main/License.txt"><img alt="License: Apache" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
-<a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
-
 <a href="https://www.comfort-ai.eu/for-patients/kidney-cancer">
-  <img alt="website" src="https://img.shields.io/badge/Website-COMFORT-darkblue.svg">
-</a>
+  <img alt="website" src="https://img.shields.io/badge/Website-COMFORT-darkblue.svg"></a>
+<a href="https://github.com/astral-sh/ruff"><img alt="Code style: ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
 
 </div>
 
