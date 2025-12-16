@@ -30,7 +30,7 @@ from monai.transforms import (
 )
 from scipy import ndimage
 
-from renal_vision.features.transforms import MinimumCropForegroundd
+from renal_vision.features.transforms import ConditionalAddChanneld, MinimumCropForegroundd
 
 ImageLike = Union[str, Path, MetaTensor]
 
@@ -59,10 +59,10 @@ class BasePreprocessor(ABC):
 
     def __init__(
         self,
-        base_transforms: List[Any],
-        aug_transforms: List[Any],
-        intensity_transforms: List[Any],
-        crop_transforms: List[Any],
+        base_transforms: List[Any] = [],
+        aug_transforms: List[Any] = [],
+        intensity_transforms: List[Any] = [],
+        crop_transforms: List[Any] = [],
     ):
         """Initializes the preprocessor with given transform lists."""
         self.base_transforms = base_transforms
@@ -173,7 +173,7 @@ class BasePreprocessor(ABC):
                 data = pipeline(data)
                 cropped_image, cropped_mask = self._finalize_numpy(data)
                 metadata = {
-                    "class_id": int(c_id) - 1,
+                    "class_id": int(c_id),
                     "volume": volume,
                 }
 
@@ -356,6 +356,7 @@ class CropPreprocessor(BasePreprocessor):
 
         # 4. Cropping Transforms
         crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
             MinimumCropForegroundd(
                 keys=["image", "seg"],
                 source_key="seg",
@@ -401,6 +402,14 @@ class StaticCropPreprocessor(CropPreprocessor):
         )
 
         # Add static resize to crop transforms
-        self.crop_transforms.append(
-            CenterSpatialCropd(keys=["image", "seg"], roi_size=[50, 50, 50])
-        )
+        self.crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
+            MinimumCropForegroundd(
+                keys=["image", "seg"],
+                source_key="seg",
+                margin=15,
+                min_shape=[50, 50, 50],
+                allow_smaller=True,
+            ),
+            CenterSpatialCropd(keys=["image", "seg"], roi_size=[50, 50, 50]),
+        ]

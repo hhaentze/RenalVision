@@ -50,7 +50,7 @@ class BaseFeatureExtractor(ABC):
         for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
             feats = self._extract_single_lesion(img_comp, seg_comp)
             feats["lesion_id"] = lesion_id
-            feats["class_id"] = meta["class_id"]
+            feats["class_id"] = meta["class_id"] - 1
             feats["volume_voxels"] = meta["volume"]
             feats["augmented"] = augment
             feats["aug_id"] = 0
@@ -77,7 +77,7 @@ class BaseFeatureExtractor(ABC):
             for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
                 feats = self._extract_single_lesion(img_comp, seg_comp)
                 feats["lesion_id"] = lesion_id
-                feats["class_id"] = meta["class_id"]
+                feats["class_id"] = meta["class_id"] - 1
                 feats["volume_voxels"] = meta["volume"]
                 feats["augmented"] = is_augmented
                 feats["aug_id"] = augmentation_id
