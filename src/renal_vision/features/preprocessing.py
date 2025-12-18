@@ -19,6 +19,7 @@ from monai.transforms import (
     LoadImage,
     MapLabelValued,
     NormalizeIntensityd,
+    Orientationd,
     RandAdjustContrastd,
     RandAffined,
     RandFlipd,
@@ -28,6 +29,7 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
     Spacingd,
+    SpatialPadd,
 )
 from scipy import ndimage
 
@@ -286,28 +288,23 @@ class CropPreprocessor(BasePreprocessor):
         return {
             "name": "CropPreprocessor",
             "target_spacing": self.target_spacing,
-            "window_center": self.window_center,
-            "window_width": self.window_width,
             "normalize": self.normalize,
         }
 
     def __init__(
         self,
         target_spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
-        window_center: float = 40,
-        window_width: float = 400,
         label_map: Optional[Dict[int, int]] = None,
         normalize: bool = True,
     ):
         self.target_spacing = target_spacing
-        self.window_center = window_center
-        self.window_width = window_width
         self.label_map = label_map or {0: 0}
         self.normalize = normalize
 
         # 1. Base Transforms
         base_transforms = [
             EnsureChannelFirstd(keys=["image", "seg"], channel_dim="no_channel"),
+            Orientationd(keys=["image", "seg"], axcodes="RAS"),
             Spacingd(
                 keys=["image", "seg"],
                 pixdim=self.target_spacing,
@@ -390,15 +387,11 @@ class StaticCropPreprocessor(CropPreprocessor):
     def __init__(
         self,
         target_spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
-        window_center: float = 40,
-        window_width: float = 400,
         label_map: Optional[Dict[int, int]] = None,
         normalize: bool = True,
     ):
         super().__init__(
             target_spacing=target_spacing,
-            window_center=window_center,
-            window_width=window_width,
             label_map=label_map,
             normalize=normalize,
         )
@@ -415,3 +408,119 @@ class StaticCropPreprocessor(CropPreprocessor):
             ),
             CenterSpatialCropd(keys=["image", "seg"], roi_size=[50, 50, 50]),
         ]
+
+
+class MevisCropPreprocessor(BasePreprocessor):
+    """
+    Preprocessor that crops arround target lesions without intensity normalization
+    components are returned in a target size of [224,224,x].
+    """
+
+    def get_config(self) -> Dict[str, Any]:
+        return {
+            "name": "CropPreprocessor",
+            "target_spacing": self.target_spacing,
+            "window_center": self.window_center,
+            "window_width": self.window_width,
+            "normalize": self.normalize,
+        }
+
+    def __init__(
+        self,
+        target_spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        window_center: float = 40,
+        window_width: float = 400,
+        label_map: Optional[Dict[int, int]] = None,
+        normalize: bool = True,
+    ):
+        self.target_spacing = target_spacing
+        self.window_center = window_center
+        self.window_width = window_width
+        self.label_map = label_map or {0: 0}
+        self.normalize = normalize
+
+        # 1. Base Transforms
+        base_transforms = [
+            EnsureChannelFirstd(keys=["image", "seg"], channel_dim="no_channel"),
+            Orientationd(keys=["image", "seg"], axcodes="RAS"),
+            Spacingd(
+                keys=["image", "seg"],
+                pixdim=self.target_spacing,
+                mode=("bilinear", "nearest"),
+            ),
+            EnsureTyped(keys=["image", "seg"]),
+            MapLabelValued(
+                keys=["seg"],
+                orig_labels=list(self.label_map.keys()),
+                target_labels=list(self.label_map.values()),
+                dtype=np.int16,
+            ),
+        ]
+
+        # 2. Augmentation Transforms
+        aug_transforms = [
+            # 1. Spatial Transforms (Anatomy & Positioning)
+            RandFlipd(keys=["image", "seg"], prob=0.5, spatial_axis=0),
+            RandFlipd(keys=["image", "seg"], prob=0.5, spatial_axis=1),
+            RandFlipd(keys=["image", "seg"], prob=0.5, spatial_axis=2),
+            RandRotate90d(keys=["image", "seg"], prob=0.5, max_k=3),
+            # 2. Affine "Jitter" (Crucial for small 50x50 inputs)
+            # Add a small translation (shift) to simulate imperfect lesion localization.
+            RandAffined(
+                keys=["image", "seg"],
+                prob=0.5,
+                rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),  # +/- 15 degrees
+                scale_range=(0.1, 0.1, 0.1),  # +/- 10% zoom
+                translate_range=(3, 3, 3),  # Shift center by +/- 3 mm
+                mode=("bilinear", "nearest"),  # Bilinear for image, Nearest for mask
+                padding_mode="border",
+            ),
+            # 3. Intensity Transforms (Scanner Variation)
+            RandGaussianNoised(keys=["image"], prob=0.3, mean=0.0, std=0.1),
+            # Simulate different reconstruction kernels (Blur)
+            RandGaussianSmoothd(
+                keys=["image"], prob=0.2, sigma_x=(0.5, 1.0), sigma_y=(0.5, 1.0), sigma_z=(0.5, 1.0)
+            ),
+            # Simulate subtle density variations (Gamma)
+            # Retains the general HU relationships but stretches contrast
+            RandAdjustContrastd(keys=["image"], prob=0.3, gamma=(0.7, 1.5)),
+        ]
+
+        # 3. Intensity Transfomrs
+        win_min = self.window_center - self.window_width / 2
+        win_max = self.window_center + self.window_width / 2
+        b_min = 0.0 if self.normalize else win_min
+        b_max = 1.0 if self.normalize else win_max
+
+        intensity_transforms = [
+            ScaleIntensityRanged(
+                keys=["image"],
+                a_min=win_min,
+                a_max=win_max,
+                b_min=b_min,
+                b_max=b_max,
+                clip=True,
+            ),
+        ]
+
+        # 4. Cropping Transforms
+        crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
+            MinimumCropForegroundd(
+                keys=["image", "seg"],
+                source_key="seg",
+                min_shape=(224, 224, 3),
+                margin=5,
+                select_fn=lambda x: x > 0,
+            ),
+            # If the patient's body doesn't fill the 224x224 frame (e.g. at the edge), pad with 0.
+            SpatialPadd(keys=["image", "seg"], spatial_size=(224, 224, -1)),
+        ]
+
+        # 5. Initialize Base Class
+        super().__init__(
+            base_transforms=base_transforms,
+            aug_transforms=aug_transforms,
+            intensity_transforms=intensity_transforms,
+            crop_transforms=crop_transforms,
+        )
