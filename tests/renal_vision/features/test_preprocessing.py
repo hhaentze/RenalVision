@@ -5,6 +5,7 @@ from monai.data import MetaTensor
 from renal_vision.features.preprocessing import (
     CropPreprocessor,
     CTPreprocessor,
+    MevisCropPreprocessor,
     StaticCropPreprocessor,
 )
 
@@ -60,7 +61,7 @@ class TestCropPreprocessors:
     """Tests for Crop and StaticCrop Preprocessors."""
 
     @pytest.mark.parametrize("processor_class", [CropPreprocessor, StaticCropPreprocessor])
-    def test_stream_components_shape_contract(self, processor_class, mock_two_lesions):
+    def test_stream_components_shape_contract_fmcib(self, processor_class, mock_two_lesions):
         """
         CRITICAL: Ensure stream_components yields numpy arrays of shape 50x50x50.
         This validates the specific requirement for feature extraction input.
@@ -89,6 +90,41 @@ class TestCropPreprocessors:
             assert comp_mask.shape == expected_shape, (
                 f"Expected mask shape {expected_shape}, but got {comp_mask.shape}"
             )
+
+            # 3. Check Metadata keys
+            assert "class_id" in metadata
+            assert "volume" in metadata
+
+    @pytest.mark.parametrize("processor_class", [MevisCropPreprocessor])
+    def test_stream_components_shape_contract_mevis(self, processor_class, mock_two_lesions):
+        """
+        CRITICAL: Ensure stream_components yields numpy arrays of shape 50x50x50.
+        This validates the specific requirement for feature extraction input.
+        """
+        image, seg = mock_two_lesions
+        preprocessor = processor_class()
+
+        # Act
+        # We expect 2 components based on the fixture data
+        components = list(preprocessor.stream_components(image, seg))
+
+        # Assert
+        assert len(components) == 2, "Should detect the 2 synthetic lesions created in fixture"
+
+        for comp_img, comp_mask, metadata in components:
+            # 1. Check Return Types
+            assert isinstance(comp_img, np.ndarray), "Stream should return numpy array"
+            assert isinstance(comp_mask, np.ndarray), "Stream should return numpy array"
+            assert isinstance(metadata, dict), "Metadata should be a dictionary"
+
+            # 2. Check Strict Shape Requirement (224,224,z)
+            expected_shape = 224
+            assert (comp_img.shape[0] == expected_shape) and (
+                comp_img.shape[1] == expected_shape
+            ), f"Expected image x and y of size {expected_shape}, but got shape {comp_img.shape}"
+            assert (comp_mask.shape[0] == expected_shape) and (
+                comp_mask.shape[1] == expected_shape
+            ), f"Expected mask x and y of size {expected_shape}, but got {comp_mask.shape}"
 
             # 3. Check Metadata keys
             assert "class_id" in metadata
