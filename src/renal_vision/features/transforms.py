@@ -39,6 +39,7 @@ class MinimumCropForeground(CropForeground):
         box_end_, *_ = convert_data_type(
             box_end, output_type=np.ndarray, dtype=np.int16, wrap_sequence=True
         )
+        img_shape = np.asarray(img.shape[1:], dtype=np.int16)
         orig_spatial_size = box_end_ - box_start_
 
         # Ensure the spatial size is at least `self.min_shape`
@@ -52,6 +53,11 @@ class MinimumCropForeground(CropForeground):
         # Update box_start and box_end
         box_start_ = box_start_ - np.floor_divide(np.asarray(spatial_size) - orig_spatial_size, 2)
         box_end_ = box_start_ + spatial_size
+
+        # Clip end so that it doesnt go over image boundaries
+        box_start_ = np.maximum(box_start_, 0)
+        box_end_ = np.minimum(box_end_, img_shape)
+
         return box_start_, box_end_
 
 
