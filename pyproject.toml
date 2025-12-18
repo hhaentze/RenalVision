@@ -30,6 +30,7 @@ dependencies = [
     "tqdm>=4.65.0",
     "scikit-image>=0.21.0",   # Patches several vulnerabilities in older versions
     "pyarrow>=17.0.0",
+    "seaborn>=0.13.2",
 ]
 
 [project.optional-dependencies]
