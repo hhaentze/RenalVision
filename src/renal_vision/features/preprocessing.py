@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import numpy as np
+import torch
 from monai.data import MetaTensor
 from monai.transforms import (
     CenterSpatialCropd,
@@ -160,6 +161,7 @@ class BasePreprocessor(ABC):
 
             # Find connected components
             labeled_mask, num_comp = ndimage.label(class_mask)
+            labeled_mask = torch.tensor(labeled_mask)
             for comp_id in range(1, num_comp + 1):
                 component_mask = seg * 0  # new empty meta tensor
                 component_mask[labeled_mask == comp_id] = 1
