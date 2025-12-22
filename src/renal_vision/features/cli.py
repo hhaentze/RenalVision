@@ -77,6 +77,15 @@ def run_extract(args: argparse.Namespace) -> None:
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
         )
+    elif args.extractor == "embeddings_mevis":
+        from .mevis_embeddings import MevisExtractor
+        from .preprocessing import MevisCropPreprocessor
+
+        preprocessor = MevisCropPreprocessor(label_map=label_map, normalize=True)
+        extractor = MevisExtractor(
+            preprocessor=preprocessor,
+            min_voxels=args.min_voxels,
+        )
     else:
         # Placeholder for future extractors
         raise ValueError(f"Unknown extractor type: {args.extractor}")
@@ -109,7 +118,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "embeddings_static", "embeddings_dynamic"],
+        choices=["radiomics", "embeddings_static", "embeddings_dynamic", "embeddings_mevis"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
@@ -140,7 +149,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
 
 def add_subparsers(subparsers: argparse._SubParsersAction) -> None:
     extract_parser = subparsers.add_parser(
-        "extract", help="Extract features from a dataset into a parquet file"
+        "extract", help="Extract features from a dataset into a parquet file."
     )
     config_extract(extract_parser)
 
