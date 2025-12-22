@@ -59,15 +59,15 @@ def run_training(
     feature_names = extractor_config["feature_names"]
     available_feature_names = [c for c in df.columns if c in feature_names]
     if len(feature_names) != len(available_feature_names):
-        raise ValueError(
-            f"Feature names do not match extractor config. Missing featues: {set(feature_names) - set(available_feature_names)}"
+        print(
+            f"WARNING: Feature names do not match extractor config. Missing featues: {set(feature_names) - set(available_feature_names)}"
         )
     print(f"Detected {len(available_feature_names)} features: {available_feature_names}")
 
     # 2. Prepare X and y
     if class_column not in df.columns:
         raise ValueError(f"Input data missing {class_column} column.")
-    X = df[feature_names].values
+    X = df[available_feature_names].values
     y = df[class_column].values.astype(int)
 
     # 3. Resolve Class Names
@@ -92,7 +92,7 @@ def run_training(
         X=X,
         y=y,
         model_type=model_type,
-        feature_names=feature_names,
+        feature_names=available_feature_names,
         class_names=class_names,
         extractor_config=extractor_config,
         tree_max_depth=tree_max_depth,
