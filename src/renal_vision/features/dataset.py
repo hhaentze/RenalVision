@@ -4,13 +4,70 @@ Handles batch extraction, augmentation loops, and data storage.
 """
 
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import torch
 from tqdm import tqdm
 
 from .base import BaseFeatureExtractor
+
+
+def worker_init(cores_per_worker: int):
+    """
+    Precision resource control for the worker process.
+    """
+    # 1. Set environment variables for BLAS/OpenMP libraries
+    os.environ["OMP_NUM_THREADS"] = str(cores_per_worker)
+    os.environ["MKL_NUM_THREADS"] = str(cores_per_worker)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(cores_per_worker)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_per_worker)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(cores_per_worker)
+
+    # 2. Set Torch-specific thread limits
+    # This is often more reliable than environment variables for PyTorch
+    torch.set_num_threads(cores_per_worker)
+
+
+def _process_single_row(args):
+    """
+    Standalone helper function to process one row.
+    Needs to be outside the class or a static method to be picklable.
+    """
+    extractor, row, image_col, seg_col, augment_count = args
+    image_path = row.get(image_col)
+    seg_path = row.get(seg_col)
+
+    if not image_path or not seg_path:
+        return []
+
+    row_meta = row.to_dict()
+    local_results = []
+
+    try:
+        # print("DEBUG", "Extract features 1", flush=True)
+        if augment_count > 0:
+            lesion_features_list = extractor.extract_multiple_augmentations(
+                image_path, seg_path, augment_count
+            )
+        else:
+            lesion_features_list = extractor.extract(image_path, seg_path)
+
+        # print("DEBUG", "Extract features 2", flush=True)
+        for lesion_feats in lesion_features_list:
+            entry = row_meta.copy()
+            entry.update(lesion_feats)
+            local_results.append(entry)
+
+    except Exception as e:
+        print(f"Error processing {image_path}: {e}", flush=True)
+
+    return local_results
 
 
 class FeatureDatasetProcessor:
@@ -28,45 +85,75 @@ class FeatureDatasetProcessor:
         image_col: str = "image_path",
         seg_col: str = "seg_path",
         augment_count: int = 0,
+        num_jobs: int = 4,
+        cores_per_job: int = 1,
+        batch_size: int = 200,
     ) -> None:
-        """
-        Run extraction on all rows in input_df.
-        Saves the result to a Parquet file.
-        Saves the extractor config to a Config file.
-        """
-        results: List[Dict[str, Any]] = []
+        # Setup Paths & Clean Up
+        final_path = Path(output_path).with_suffix(".parquet")
+        tmp_path = final_path.with_suffix(".parquet.tmp")
+        config_path = final_path.with_name(final_path.stem + ".config.json")
+        for p in [final_path, tmp_path, config_path]:
+            if p.exists():
+                p.unlink()
+        final_path.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"Starting extraction with {type(self.extractor).__name__}...")
+        # Design schema for parquet writer
+        # active features: float
+        # all other: string
+        schema_blueprint = {f: pa.float64() for f in self.extractor.feature_names}
+        schema_blueprint.update(
+            {
+                "lesion_id": pa.int16(),
+                "class_id": pa.int16(),
+                "volumne_voxels": pa.float16(),
+                "augmented": pa.bool_(),
+                "aug_id": pa.int16(),
+            }
+        )
+        current_batch: List[Dict[str, Any]] = []
 
-        for idx, row in tqdm(input_df.iterrows(), total=len(input_df)):
-            image_path = row.get(image_col)
-            seg_path = row.get(seg_col)
+        print(f"Starting parallel extraction with {num_jobs * cores_per_job} workers...")
 
-            if not image_path or not seg_path:
-                continue
+        # Prepare arguments for the pool
+        # Note: self.extractor must be picklable.
+        tasks = [
+            (self.extractor, row, image_col, seg_col, augment_count)
+            for _, row in input_df.iterrows()
+        ]
 
-            # Base metadata from the CSV row (case_id, etc.)
-            row_meta = row.to_dict()
+        with ProcessPoolExecutor(
+            max_workers=num_jobs, initializer=worker_init, initargs=(cores_per_job,)
+        ) as executor:
+            futures = [executor.submit(_process_single_row, task) for task in tasks]
+            writer: Optional[pq.ParquetWriter] = None
 
-            try:
-                # Extract features
-                if augment_count > 0:
-                    lesion_features_list = self.extractor.extract_multiple_augmentations(
-                        image_path, seg_path, augment_count
+            for future in tqdm(as_completed(futures), total=len(tasks), desc="Processing"):
+                res_list = future.result()
+                if res_list:
+                    current_batch.extend(res_list)
+
+                if len(current_batch) > batch_size:
+                    writer = self._write_batch_pyarrow(
+                        current_batch, tmp_path, writer, schema_blueprint
                     )
-                else:
-                    lesion_features_list = self.extractor.extract(image_path, seg_path)
+                    current_batch = []
 
-                # Merge features with metadata
-                for lesion_feats in lesion_features_list:
-                    entry = row_meta.copy()
-                    entry.update(lesion_feats)
-                    results.append(entry)
+            # Final flush
+            if current_batch:
+                writer = self._write_batch_pyarrow(
+                    current_batch, tmp_path, writer, schema_blueprint
+                )
 
-            except Exception as e:
-                print(f"Error processing {image_path}: {e}")
-
-        self._save_results(results, output_path)
+        # Finalize the file
+        if writer is not None:
+            writer.close()
+            tmp_path.rename(final_path)
+            with open(config_path, "w") as f:
+                json.dump(self.extractor.get_config(), f, indent=4)
+            print(f"Extraction complete. Saved to: {final_path}")
+        else:
+            print("No data was processed.")
 
     @staticmethod
     def load_features(path: Union[str, Path]) -> pd.DataFrame:
@@ -85,24 +172,49 @@ class FeatureDatasetProcessor:
         else:
             raise ValueError(f"Unsupported file format: {path.suffix}")
 
-    def _save_results(self, results: List[Dict[str, Any]], output_path: Union[str, Path]) -> None:
-        if not results:
-            print("No features extracted. Nothing to save.")
-            return
+    def _write_batch_pyarrow(
+        self,
+        data_list: List[Dict[str, Any]],
+        path: Path,
+        writer: Optional[pq.ParquetWriter],
+        schema_blueprint: Optional[Dict[str, Any]],
+    ) -> pq.ParquetWriter:
+        """
+        Converts a list of dicts to a PyArrow Table and writes/appends to Parquet.
+        """
+        if writer is None:
+            if schema_blueprint is None:
+                raise ValueError("Schema must be defined if writer is None")  #
 
-        df = pd.DataFrame(results)
+            new_blueprint = []
+            for k in data_list[0].keys():
+                if k in schema_blueprint:
+                    new_blueprint.append((k, schema_blueprint[k]))
+                else:
+                    new_blueprint.append((k, pa.string()))
+            schema = pa.schema(new_blueprint)
+            writer = pq.ParquetWriter(str(path), schema, compression="snappy")
 
-        # Enforce Parquet extension
-        path_obj = Path(output_path)
-        if path_obj.suffix != ".parquet":
-            path_obj = path_obj.with_suffix(".parquet")
-            print(f"Note: Enforcing .parquet extension. Output will be: {path_obj}")
+        df = pd.DataFrame(data_list)
+        df = df[writer.schema.names]
 
-        path_obj.parent.mkdir(parents=True, exist_ok=True)
-        path_config_obj = path_obj.with_name(path_obj.stem + ".config.json")
+        # Enforce types defined in pyarrow schema
+        for field in writer.schema:
+            col = field.name
+            a_type = field.type
 
-        # Save
-        df.to_parquet(path_obj, index=False)
-        with open(path_config_obj, "w") as f:
-            json.dump(self.extractor.get_config(), f, indent=4)
-        print(f"Saved {len(df)} lesions to {path_obj} and {path_config_obj}")
+            if pa.types.is_floating(a_type):
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype(a_type.to_pandas_dtype())
+            elif pa.types.is_integer(a_type):
+                df[col] = (
+                    pd.to_numeric(df[col], errors="coerce").round().astype(a_type.to_pandas_dtype())
+                )
+            elif pa.types.is_boolean(a_type):
+                df[col] = df[col].map({True: True, False: False, "True": True, "False": False})
+            elif pa.types.is_string(a_type) or pa.types.is_binary(a_type):
+                df[col] = df[col].astype(str).replace(["None", "nan", "<NA>"], None)
+
+        table = pa.Table.from_pandas(df, schema=writer.schema, preserve_index=False)
+        writer.write_table(table)
+
+        return writer

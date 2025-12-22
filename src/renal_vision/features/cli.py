@@ -93,7 +93,13 @@ def run_extract(args: argparse.Namespace) -> None:
     # 4. Run Batch Processing
     processor = FeatureDatasetProcessor(extractor)
 
-    processor.process_dataset(input_df=df, output_path=args.output, augment_count=args.augment)
+    processor.process_dataset(
+        input_df=df,
+        output_path=args.output,
+        augment_count=args.augment,
+        num_jobs=args.num_jobs,
+        cores_per_job=args.cores_per_job,
+    )
 
 
 # ================= Configuration =================
@@ -145,6 +151,15 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         help="If set, normalize image intensities to [0, 1]. Default is False (preserve HU).",
     )
     parser.set_defaults(func=run_extract)
+
+    # Multiprocessing
+    parser.add_argument(
+        "--num_jobs",
+        type=int,
+        default=4,
+        help="Number of extraction jobs that can be run in parallel.",
+    )
+    parser.add_argument("--cores_per_job", type=int, default=1, help="Number of cores per job.")
 
 
 def add_subparsers(subparsers: argparse._SubParsersAction) -> None:
