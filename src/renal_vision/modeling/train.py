@@ -38,6 +38,7 @@ def run_training(
     class_config_path: Optional[str] = None,
     tree_max_depth: int = 5,
     class_column: str = "class_id",
+    verbose: bool = True,
 ) -> None:
     """
     Execute the training pipeline.
@@ -58,11 +59,13 @@ def run_training(
         extractor_config = json.load(f)
     feature_names = extractor_config["feature_names"]
     available_feature_names = [c for c in df.columns if c in feature_names]
-    if len(feature_names) != len(available_feature_names):
-        print(
-            f"WARNING: Feature names do not match extractor config. Missing featues: {set(feature_names) - set(available_feature_names)}"
-        )
-    print(f"Detected {len(available_feature_names)} features: {available_feature_names}")
+
+    if verbose:
+        if len(feature_names) != len(available_feature_names):
+            print(
+                f"WARNING: Feature names do not match extractor config. Missing featues: {set(feature_names) - set(available_feature_names)}"
+            )
+        print(f"Detected {len(available_feature_names)} features: {available_feature_names}")
 
     # 2. Prepare X and y
     if class_column not in df.columns:
@@ -82,10 +85,12 @@ def run_training(
             class_names[cls] = loaded_names[cls]
         else:
             class_names[cls] = f"Class {cls}"
-            print(f"No name provided for Class {cls}. Using default.")
+            if verbose:
+                print(f"No name provided for Class {cls}. Using default.")
 
-    print(f"Training on {len(df)} samples ({n_classes} classes).")
-    print(f"Class mapping: {class_names}")
+    if verbose:
+        print(f"Training on {len(df)} samples ({n_classes} classes).")
+        print(f"Class mapping: {class_names}")
 
     # 5. Train Model
     model_bundle = train_classifier(

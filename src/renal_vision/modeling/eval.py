@@ -5,6 +5,7 @@ Loads a trained model and test features, calculates metrics, and saves reports.
 
 import json
 from pathlib import Path
+from typing import Any, Dict
 
 import numpy as np
 
@@ -23,7 +24,8 @@ def run_evaluation(
     data_path: str,
     model_path: str,
     output_dir: str,
-) -> None:
+    verbose: bool = True,
+) -> Dict[str, Any]:
     """
     Execute the evaluation pipeline.
 
@@ -74,52 +76,54 @@ def run_evaluation(
     )
 
     # 5. Print & Save Report
-    print("\n" + "=" * 40)
-    print(f"Accuracy: {metrics['accuracy']:.4f}")
-    print(f"F1 Score: {metrics['f1']:.4f}")
-    print("=" * 40)
-    print("Classification Report:")
-    print(metrics["report_str"])
+    if verbose:
+        print("\n" + "=" * 40)
+        print(f"Accuracy: {metrics['accuracy']:.4f}")
+        print(f"F1 Score: {metrics['f1']:.4f}")
+        print("=" * 40)
+        print("Classification Report:")
+        print(metrics["report_str"])
 
-    # Save raw metrics
-    # Convert numpy types to native python for JSON serialization
-    def convert_numpy(obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return obj
+        # Save raw metrics
+        # Convert numpy types to native python for JSON serialization
+        def convert_numpy(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return obj
 
-    with open(output_path / "metrics.json", "w") as f:
-        json.dump(metrics, f, default=convert_numpy, indent=4)
+        with open(output_path / "metrics.json", "w") as f:
+            json.dump(metrics, f, default=convert_numpy, indent=4)
 
-    # 6. Generate Plots
-    # Confusion Matrix
-    if "confusion_matrix" in metrics:
-        plot_confusion_matrix(
-            cm=np.array(metrics["confusion_matrix"]),
+        # 6. Generate Plots
+        # Confusion Matrix
+        if "confusion_matrix" in metrics:
+            plot_confusion_matrix(
+                cm=np.array(metrics["confusion_matrix"]),
+                class_names=class_names_list,
+                output_path=str(output_path / "confusion_matrix.png"),
+            )
+
+        # ROC Curves
+        # Note: plot_multiclass_roc handles both binary and multi-class logic
+        plot_multiclass_roc(
+            y_true=y_true,
+            y_proba=y_proba,
+            n_classes=model_bundle.n_classes,
             class_names=class_names_list,
-            output_path=str(output_path / "confusion_matrix.png"),
+            output_path=str(output_path / "roc_curves.png"),
         )
+        # PR Curves
+        plot_multiclass_pr_curve(
+            y_true=y_true,
+            y_proba=y_proba,
+            n_classes=model_bundle.n_classes,
+            class_names=class_names_list,
+            output_path=str(output_path / "pr_curves.png"),
+        )
+        print(f"Results saved to {output_dir}")
 
-    # ROC Curves
-    # Note: plot_multiclass_roc handles both binary and multi-class logic
-    plot_multiclass_roc(
-        y_true=y_true,
-        y_proba=y_proba,
-        n_classes=model_bundle.n_classes,
-        class_names=class_names_list,
-        output_path=str(output_path / "roc_curves.png"),
-    )
-    # PR Curves
-    plot_multiclass_pr_curve(
-        y_true=y_true,
-        y_proba=y_proba,
-        n_classes=model_bundle.n_classes,
-        class_names=class_names_list,
-        output_path=str(output_path / "pr_curves.png"),
-    )
-
-    print(f"Results saved to {output_dir}")
+    return metrics
