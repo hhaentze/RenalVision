@@ -455,6 +455,8 @@ class MevisCropPreprocessor(BasePreprocessor):
                 target_labels=list(self.label_map.values()),
                 dtype=np.int16,
             ),
+            # rough crop to non-zero seg region to speed up subsequent processing
+            CropForegroundd(keys=["image", "seg"], source_key="seg", margin=(999, 999, 20)),
         ]
 
         # 2. Augmentation Transforms
@@ -511,7 +513,6 @@ class MevisCropPreprocessor(BasePreprocessor):
                 source_key="seg",
                 min_shape=(224, 224, 3),
                 margin=5,
-                select_fn=lambda x: x > 0,
             ),
             # If the patient's body doesn't fill the 224x224 frame (e.g. at the edge), pad with 0.
             SpatialPadd(keys=["image", "seg"], spatial_size=(224, 224, -1)),
