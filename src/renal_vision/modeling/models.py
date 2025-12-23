@@ -80,41 +80,33 @@ class ModelFactory:
     @staticmethod
     def create_model(model_type: str, n_classes: int, **kwargs: Any) -> BaseEstimator:
         if model_type == ModelType.LOGISTIC.value:
-            return LogisticRegression(
-                max_iter=1000,
-                random_state=42,
-                class_weight="balanced",
-            )
+            kwargs.setdefault("random_state", 42)
+            kwargs.setdefault("max_iter", 1000)
+            kwargs.setdefault("class_weight", "balanced")
+            return LogisticRegression(**kwargs)
 
         elif model_type == ModelType.TREE.value:
-            max_depth = kwargs.get("tree_max_depth", 5)
-            return DecisionTreeClassifier(
-                max_depth=max_depth,
-                random_state=42,
-                class_weight="balanced",
-                min_samples_leaf=5,
-            )
+            kwargs.setdefault("random_state", 42)
+            kwargs.setdefault("class_weight", "balanced")
+            kwargs.setdefault("min_samples_leaf", 5)
+            kwargs.setdefault("max_depth", 5)
+            return DecisionTreeClassifier(**kwargs)
 
         elif model_type == ModelType.XGBOOST.value:
-            if XGBClassifier is None:
-                raise ImportError("XGBoost is not installed. Run `pip install xgboost`.")
-
             # XGBoost objective handling
             if n_classes == 2:
-                objective = "binary:logistic"
-                num_class = None
+                kwargs.setdefault("objective", "binary:logistic")
+                kwargs.setdefault("num_class", None)
             else:
-                objective = "multi:softprob"
-                num_class = n_classes
-
+                kwargs.setdefault("objective", "multi:softprob")
+                kwargs.setdefault("num_class", n_classes)
+            kwargs.setdefault("random_state", 42)
+            kwargs.setdefault("n_estimators", 100)
+            kwargs.setdefault("learning_rate", 0.1)
+            kwargs.setdefault("eval_metric", "mlogloss")
+            kwargs.setdefault("max_depth", 3)
             return XGBClassifier(
-                n_estimators=100,
-                max_depth=kwargs.get("tree_max_depth", 3),
-                learning_rate=0.1,
-                objective=objective,
-                num_class=num_class,
-                random_state=42,
-                eval_metric="mlogloss",
+                **kwargs,
             )
         else:
             raise ValueError(f"Unknown model type: {model_type}")
@@ -127,8 +119,8 @@ def train_classifier(
     feature_names: List[str],
     class_names: Dict[int, str],
     extractor_config: Dict[str, Any],
-    tree_max_depth: int = 5,
     apply_log_transform: bool = True,
+    **kwargs,
 ) -> ModelBundle:
     """
     Train a classifier. Handles preprocessing (scaling/log) and ModelBundle creation.
@@ -162,7 +154,7 @@ def train_classifier(
         X_final = X_processed
 
     # 3. Train
-    model = ModelFactory.create_model(model_type, n_classes, tree_max_depth=tree_max_depth)
+    model = ModelFactory.create_model(model_type, n_classes, **kwargs)
     model.fit(X_final, y)
 
     # 4. Bundle
