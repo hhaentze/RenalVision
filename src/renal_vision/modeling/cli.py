@@ -17,7 +17,6 @@ def run_train(args: argparse.Namespace) -> None:
         model_type=args.model,
         class_config_path=args.class_config,
         extractor_config_path=args.extractor_config,
-        tree_max_depth=args.depth,
     )
 
 

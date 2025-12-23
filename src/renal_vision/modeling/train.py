@@ -36,9 +36,9 @@ def run_training(
     extractor_config_path: str,
     model_type: str = "logistic",
     class_config_path: Optional[str] = None,
-    tree_max_depth: int = 5,
     class_column: str = "class_id",
     verbose: bool = True,
+    **kwargs,
 ) -> None:
     """
     Execute the training pipeline.
@@ -49,7 +49,6 @@ def run_training(
         model_type: 'logistic', 'tree', or 'xgboost'.
         class_config_path: JSON file defining class names (e.g. {1: 'Tumor'}).
         extractor_config_path: JSON file from features describing extraction settings.
-        tree_max_depth: Hyperparameter for tree-based models.
     """
     print(f"Loading training data from {data_path}...")
     df = FeatureDatasetProcessor.load_features(data_path)
@@ -100,8 +99,8 @@ def run_training(
         feature_names=available_feature_names,
         class_names=class_names,
         extractor_config=extractor_config,
-        tree_max_depth=tree_max_depth,
         apply_log_transform=True,
+        **kwargs,
     )
 
     # 6. Save
