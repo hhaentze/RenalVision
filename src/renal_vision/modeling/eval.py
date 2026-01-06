@@ -24,6 +24,7 @@ def run_evaluation(
     data_path: str,
     model_path: str,
     output_dir: str,
+    class_column: str = "class_id",
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -38,10 +39,12 @@ def run_evaluation(
     output_path.mkdir(parents=True, exist_ok=True)
 
     # 1. Load Data & Model
-    print(f"Loading test data from {data_path}...")
+    if verbose:
+        print(f"Loading test data from {data_path}...")
     df = FeatureDatasetProcessor.load_features(data_path)
 
-    print(f"Loading model from {model_path}...")
+    if verbose:
+        print(f"Loading model from {model_path}...")
     model_bundle = ModelBundle.load(model_path)
 
     # 2. Align Features
@@ -54,14 +57,14 @@ def run_evaluation(
     X = df[model_bundle.feature_names].values
 
     # Target column check
-    target_col = "class_id" if "class_id" in df.columns else "label"
-    if target_col not in df.columns:
-        raise ValueError("Test data missing 'class_id' or 'label' column.")
-    y_true = df[target_col].values.astype(int)
+    if class_column not in df.columns:
+        raise ValueError(f"Input data missing {class_column} column.")
+    y_true = df[class_column].values.astype(int)
 
     # 3. Predict
     # predict_proba handles the internal scaling/log-transforms
-    print("Running predictions...")
+    if verbose:
+        print("Running predictions...")
     y_proba = predict_proba(model_bundle, X)
     y_pred = y_proba.argmax(axis=1)
 
