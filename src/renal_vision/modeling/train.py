@@ -50,7 +50,8 @@ def run_training(
         class_config_path: JSON file defining class names (e.g. {1: 'Tumor'}).
         extractor_config_path: JSON file from features describing extraction settings.
     """
-    print(f"Loading training data from {data_path}...")
+    if verbose:
+        print(f"Loading training data from {data_path}...")
     df = FeatureDatasetProcessor.load_features(data_path)
 
     # 1. Identify Feature Columns
@@ -106,4 +107,5 @@ def run_training(
     # 6. Save
     out_path = Path(output_dir) / "model.pkl"
     model_bundle.save(out_path)
-    print(f"Successfully saved model to {out_path}")
+    if verbose:
+        print(f"Successfully saved model to {out_path}")
