@@ -26,6 +26,7 @@ from monai.transforms import (
     RandGaussianNoised,
     RandGaussianSmoothd,
     RandRotate90d,
+    RandShiftIntensityd,
     Resized,
     ScaleIntensityRanged,
     Spacingd,
@@ -229,15 +230,10 @@ class CTPreprocessor(BasePreprocessor):
 
         # 2. Augmentation
         aug_transforms = [
-            RandGaussianNoised(keys=["image"], prob=0.5, mean=0.0, std=0.1),
-            RandAffined(
-                keys=["image", "seg"],
-                prob=0.5,
-                rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
-                scale_range=(0.1, 0.1, 0.1),
-                mode=("bilinear", "nearest"),
-                padding_mode="zeros",
-            ),
+            RandFlipd(keys=["image", "seg"], prob=0.5),
+            RandRotate90d(keys=["image", "seg"], prob=0.5),
+            RandShiftIntensityd(keys=["image"], offsets=10, prob=0.5),
+            RandAffined(keys=["seg"], prob=0.7, translate_range=2, mode="nearest"),
         ]
 
         # 3. Intensity Transforms (should be applied after augmentation)
