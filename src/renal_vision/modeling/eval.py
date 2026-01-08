@@ -26,6 +26,7 @@ def run_evaluation(
     output_dir: str,
     class_column: str = "class_id",
     verbose: bool = True,
+    return_preds: bool = False,
 ) -> Dict[str, Any]:
     """
     Execute the evaluation pipeline.
@@ -128,5 +129,13 @@ def run_evaluation(
             output_path=str(output_path / "pr_curves.png"),
         )
         print(f"Results saved to {output_dir}")
+
+    if return_preds:
+        pred_df = df.drop(model_bundle.feature_names, axis=1)
+        pred_df["y_true"] = y_true
+        for cl in range(len(class_names_list)):
+            pred_df[f"y_{cl}_proba"] = [p[cl] for p in y_proba]
+        pred_df["y_pred"] = y_pred
+        metrics["pred_df"] = pred_df
 
     return metrics
