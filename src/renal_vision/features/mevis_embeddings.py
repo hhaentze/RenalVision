@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 from .base import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, MevisCropPreprocessor
+from .preprocessing import BasePreprocessor, MevisPreprocessor
 
 os.environ["MMM_LICENSE_ACCEPTED"] = "i accept"
 from mmm.labelstudio_ext.NativeBlocks import DEFAULT_MODEL, MMM_MODELS, NativeBlocks
@@ -23,7 +23,7 @@ class MevisExtractor(BaseFeatureExtractor):
         min_voxels: int = 10,
     ) -> None:
         if preprocessor is None:
-            preprocessor = MevisCropPreprocessor(normalize=True)
+            preprocessor = MevisPreprocessor(normalize=True)
 
         super().__init__(preprocessor, min_voxels)
 
@@ -93,8 +93,8 @@ class MevisExtractor(BaseFeatureExtractor):
                 embeddings.append(feature_vector)
 
                 # Calculate the mask weight: How much of this slab is actually lesion?
-                # We take the sum of the mask in these 3 slices, add 100 to give a minor weight to the margins
-                mask_sum = seg[..., z - 1 : z + 2].sum() + 100
+                # We take the sum of the mask in these 3 slices, add 10 to give a minor weight to the margins
+                mask_sum = seg[..., z - 1 : z + 2].sum() + 10
                 weights.append(mask_sum)
 
         # Convert lists to tensors

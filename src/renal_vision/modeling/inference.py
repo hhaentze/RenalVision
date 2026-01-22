@@ -14,10 +14,9 @@ from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
 from renal_vision.features.preprocessing import (
-    CropPreprocessor,
     CTPreprocessor,
+    FMCIBPreprocessor,
     ImageLike,
-    StaticCropPreprocessor,
 )
 from renal_vision.features.radiomics import RadiomicsExtractor
 
@@ -63,14 +62,13 @@ class LesionPredictor:
 
         # 1. Reconstruct Preprocessor
         prep_config = config["preprocessor"]
+        args = {k: v for k, v in prep_config.items() if k != "name"}
         if prep_config["name"] == "CTPreprocessor":
-            preprocessor = CTPreprocessor(**{k: v for k, v in prep_config.items() if k != "name"})
-        elif prep_config["name"] == "CropPreprocessor":
-            preprocessor = CropPreprocessor(**{k: v for k, v in prep_config.items() if k != "name"})
+            preprocessor = CTPreprocessor(**args)
+        elif prep_config["name"] == "FMCIBPreprocessor":
+            preprocessor = FMCIBPreprocessor(**args)
         elif prep_config["name"] == "StaticCropPreprocessor":
-            preprocessor = StaticCropPreprocessor(
-                **{k: v for k, v in prep_config.items() if k != "name"}
-            )
+            preprocessor = FMCIBPreprocessor(**args)
         else:
             raise ValueError(f"Unknown preprocessort type in model config: {prep_config['name']}")
 

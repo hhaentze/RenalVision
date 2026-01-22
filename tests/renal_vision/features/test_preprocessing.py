@@ -2,12 +2,7 @@ import numpy as np
 import pytest
 from monai.data import MetaTensor
 
-from renal_vision.features.preprocessing import (
-    CropPreprocessor,
-    CTPreprocessor,
-    MevisCropPreprocessor,
-    StaticCropPreprocessor,
-)
+from renal_vision.features.preprocessing import CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor
 
 # ==========================================
 # 1. Happy Path Tests
@@ -60,7 +55,7 @@ class TestCTPreprocessor:
 class TestCropPreprocessors:
     """Tests for Crop and StaticCrop Preprocessors."""
 
-    @pytest.mark.parametrize("processor_class", [CropPreprocessor, StaticCropPreprocessor])
+    @pytest.mark.parametrize("processor_class", [FMCIBPreprocessor])
     def test_stream_components_shape_contract_fmcib(self, processor_class, mock_two_lesions):
         """
         CRITICAL: Ensure stream_components yields numpy arrays of shape 50x50x50.
@@ -95,7 +90,7 @@ class TestCropPreprocessors:
             assert "class_id" in metadata
             assert "volume" in metadata
 
-    @pytest.mark.parametrize("processor_class", [MevisCropPreprocessor])
+    @pytest.mark.parametrize("processor_class", [MevisPreprocessor])
     def test_stream_components_shape_contract_mevis(self, processor_class, mock_two_lesions):
         """
         CRITICAL: Ensure stream_components yields numpy arrays of shape 50x50x50.
@@ -117,8 +112,8 @@ class TestCropPreprocessors:
             assert isinstance(comp_mask, np.ndarray), "Stream should return numpy array"
             assert isinstance(metadata, dict), "Metadata should be a dictionary"
 
-            # 2. Check Strict Shape Requirement (224,224,z)
-            expected_shape = 224
+            # 2. Check Strict Shape Requirement (64,64,z)
+            expected_shape = 64
             assert (comp_img.shape[0] == expected_shape) and (
                 comp_img.shape[1] == expected_shape
             ), f"Expected image x and y of size {expected_shape}, but got shape {comp_img.shape}"
@@ -137,7 +132,7 @@ class TestCropPreprocessors:
 
 
 class TestEdgeCases:
-    ALL_PREPROCESSORS = [CTPreprocessor, CropPreprocessor, StaticCropPreprocessor]
+    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor]
 
     @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
     def test_empty_segmentation_handling(self, preprocessor_class, mock_no_lesion):
