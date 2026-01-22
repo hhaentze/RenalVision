@@ -255,7 +255,7 @@ class CTPreprocessor(BasePreprocessor):
         ]
 
         # 4. Cropping
-        crop_transforms = [CropForegroundd(keys=["image", "seg"], source_key="seg", margin=5)]
+        crop_transforms = [CropForegroundd(keys=["image", "seg"], source_key="seg", margin=10)]
 
         # 5. Initialize Base Class
         super().__init__(
@@ -355,7 +355,7 @@ class CropPreprocessor(BasePreprocessor):
             MinimumCropForegroundd(
                 keys=["image", "seg"],
                 source_key="seg",
-                margin=15,
+                margin=10,
                 min_shape=[50, 50, 50],
                 allow_smaller=True,
             ),
@@ -398,7 +398,7 @@ class StaticCropPreprocessor(CropPreprocessor):
             MinimumCropForegroundd(
                 keys=["image", "seg"],
                 source_key="seg",
-                margin=15,
+                margin=10,
                 min_shape=[50, 50, 50],
                 allow_smaller=True,
             ),
@@ -409,7 +409,7 @@ class StaticCropPreprocessor(CropPreprocessor):
 class MevisCropPreprocessor(BasePreprocessor):
     """
     Preprocessor that crops arround target lesions without intensity normalization
-    components are returned in a target size of [224,224,x].
+    components are returned in a target size of [64,64,x].
     """
 
     def get_config(self) -> Dict[str, Any]:
@@ -507,11 +507,12 @@ class MevisCropPreprocessor(BasePreprocessor):
             MinimumCropForegroundd(
                 keys=["image", "seg"],
                 source_key="seg",
-                min_shape=(224, 224, 3),
-                margin=5,
+                min_shape=(64, 64, 3),
+                margin=10,
             ),
-            # If the patient's body doesn't fill the 224x224 frame (e.g. at the edge), pad with 0.
-            SpatialPadd(keys=["image", "seg"], spatial_size=(224, 224, -1)),
+            # If the patient's body doesn't fill the 64,64 frame (e.g. at the edge), pad with 0.
+            SpatialPadd(keys=["image", "seg"], spatial_size=(64, 64, -1)),
+            Resized(keys=["image", "seg"], mode=["area", "nearest"], spatial_size=(64, 64, -1)),
         ]
 
         # 5. Initialize Base Class
