@@ -12,7 +12,7 @@ from monai.networks.nets import resnet50
 from torch import nn
 
 from .base import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, StaticCropPreprocessor
+from .preprocessing import BasePreprocessor, FMCIBPreprocessor
 
 
 # Helper function to manage the cache logic
@@ -210,7 +210,7 @@ class EmbeddingExtractor(BaseFeatureExtractor):
         min_voxels: int = 10,
     ) -> None:
         if preprocessor is None:
-            preprocessor = StaticCropPreprocessor(normalize=True)
+            preprocessor = FMCIBPreprocessor(normalize=True)
 
         super().__init__(preprocessor, min_voxels)
 

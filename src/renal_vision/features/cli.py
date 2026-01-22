@@ -59,29 +59,21 @@ def run_extract(args: argparse.Namespace) -> None:
             feature_names=None,  # Default to all
         )
 
-    elif args.extractor == "embeddings_static":
+    elif args.extractor == "embeddings_fmcib":
         from .fmcib_embeddings import EmbeddingExtractor
-        from .preprocessing import StaticCropPreprocessor
+        from .preprocessing import FMCIBPreprocessor
 
-        preprocessor = StaticCropPreprocessor(label_map=label_map, normalize=True)
+        preprocessor = FMCIBPreprocessor(label_map=label_map, normalize=True)
         extractor = EmbeddingExtractor(
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
         )
-    elif args.extractor == "embeddings_dynamic":
-        from .fmcib_embeddings import EmbeddingExtractor
-        from .preprocessing import CropPreprocessor
 
-        preprocessor = CropPreprocessor(label_map=label_map, normalize=True)
-        extractor = EmbeddingExtractor(
-            preprocessor=preprocessor,
-            min_voxels=args.min_voxels,
-        )
     elif args.extractor == "embeddings_mevis":
         from .mevis_embeddings import MevisExtractor
-        from .preprocessing import MevisCropPreprocessor
+        from .preprocessing import MevisPreprocessor
 
-        preprocessor = MevisCropPreprocessor(label_map=label_map, normalize=True)
+        preprocessor = MevisPreprocessor(label_map=label_map, normalize=True)
         extractor = MevisExtractor(
             preprocessor=preprocessor,
             min_voxels=args.min_voxels,
@@ -124,7 +116,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "embeddings_static", "embeddings_dynamic", "embeddings_mevis"],
+        choices=["radiomics", "embeddings_fmcib", "embeddings_mevis"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
