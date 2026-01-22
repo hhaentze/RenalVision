@@ -13,6 +13,7 @@ from sklearn.base import BaseEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 
 
@@ -82,12 +83,10 @@ class ModelFactory:
         if model_type == ModelType.LOGISTIC.value:
             kwargs.setdefault("random_state", 42)
             kwargs.setdefault("max_iter", 1000)
-            kwargs.setdefault("class_weight", "balanced")
             return LogisticRegression(**kwargs)
 
         elif model_type == ModelType.TREE.value:
             kwargs.setdefault("random_state", 42)
-            kwargs.setdefault("class_weight", "balanced")
             kwargs.setdefault("min_samples_leaf", 5)
             kwargs.setdefault("max_depth", 5)
             return DecisionTreeClassifier(**kwargs)
@@ -155,7 +154,8 @@ def train_classifier(
 
     # 3. Train
     model = ModelFactory.create_model(model_type, n_classes, **kwargs)
-    model.fit(X_final, y)
+    weights = compute_sample_weight(class_weight="balanced", y=y)
+    model.fit(X_final, y, sample_weight=weights)
 
     # 4. Bundle
     return ModelBundle(
