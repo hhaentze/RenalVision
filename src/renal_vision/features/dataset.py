@@ -15,7 +15,7 @@ import pyarrow.parquet as pq
 import torch
 from tqdm import tqdm
 
-from .base import BaseFeatureExtractor
+from .base_extractor import BaseFeatureExtractor
 
 
 def worker_init(cores_per_worker: int):

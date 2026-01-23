@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from .base import BaseFeatureExtractor
+from .base_extractor import BaseFeatureExtractor
 from .preprocessing import BasePreprocessor, MevisPreprocessor
 
 os.environ["MMM_LICENSE_ACCEPTED"] = "i accept"
@@ -20,12 +20,12 @@ class MevisExtractor(BaseFeatureExtractor):
     def __init__(
         self,
         preprocessor: Optional[BasePreprocessor] = None,
-        min_voxels: int = 10,
+        min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
             preprocessor = MevisPreprocessor(normalize=True)
 
-        super().__init__(preprocessor, min_voxels)
+        super().__init__(preprocessor, min_volume)
 
         self._active_features = [f"F{f}_max" for f in range(512)]
         self._active_features += [f"F{f}_mean" for f in range(512)]
@@ -40,7 +40,7 @@ class MevisExtractor(BaseFeatureExtractor):
         return {
             "type": "MevisEmbeddings",
             "feature_names": self.feature_names,
-            "min_voxels": self.min_voxels,
+            "min_volume": self.min_volume,
             "preprocessor": self.preprocessor.get_config(),
         }
 
@@ -52,7 +52,7 @@ class MevisExtractor(BaseFeatureExtractor):
         """
         features: Dict[str, float] = {}
 
-        # Safety check (should be caught by min_voxels, but good for robustness)
+        # Safety check (should be caught by min_volume, but good for robustness)
         if np.sum(lesion_mask) == 0:
             raise ValueError("Lesion mask is empty during feature extraction.")
 

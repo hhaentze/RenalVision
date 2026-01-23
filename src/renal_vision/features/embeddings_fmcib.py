@@ -11,7 +11,7 @@ import torch
 from monai.networks.nets import resnet50
 from torch import nn
 
-from .base import BaseFeatureExtractor
+from .base_extractor import BaseFeatureExtractor
 from .preprocessing import BasePreprocessor, FMCIBPreprocessor
 
 
@@ -203,16 +203,16 @@ def fmcib_model(eval_mode: bool = True, weights_path: Optional[Path | str] = Non
     return model
 
 
-class EmbeddingExtractor(BaseFeatureExtractor):
+class FMCIBExtractor(BaseFeatureExtractor):
     def __init__(
         self,
         preprocessor: Optional[BasePreprocessor] = None,
-        min_voxels: int = 10,
+        min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
             preprocessor = FMCIBPreprocessor(normalize=True)
 
-        super().__init__(preprocessor, min_voxels)
+        super().__init__(preprocessor, min_volume)
 
         self._active_features = [f"F{f}" for f in range(4096)]
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -226,7 +226,7 @@ class EmbeddingExtractor(BaseFeatureExtractor):
         return {
             "type": "radiomics",
             "feature_names": self.feature_names,
-            "min_voxels": self.min_voxels,
+            "min_volume": self.min_volume,
             "preprocessor": self.preprocessor.get_config(),
         }
 
@@ -238,7 +238,7 @@ class EmbeddingExtractor(BaseFeatureExtractor):
         """
         features: Dict[str, float] = {}
 
-        # Safety check (should be caught by min_voxels, but good for robustness)
+        # Safety check (should be caught by min_volume, but good for robustness)
         if np.sum(lesion_mask) == 0:
             raise ValueError("Lesion mask is empty during feature extraction.")
 

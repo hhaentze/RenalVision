@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 from monai.data import MetaTensor
 
-from renal_vision.features.preprocessing import CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor
+from renal_vision.features.preprocessing import (
+    CTFMPreprocessor,
+    CTPreprocessor,
+    FMCIBPreprocessor,
+    MevisPreprocessor,
+)
 
 # ==========================================
 # 1. Happy Path Tests
@@ -132,7 +137,7 @@ class TestCropPreprocessors:
 
 
 class TestEdgeCases:
-    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor]
+    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
 
     @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
     def test_empty_segmentation_handling(self, preprocessor_class, mock_no_lesion):
@@ -152,9 +157,9 @@ class TestEdgeCases:
         )
 
     @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
-    def test_min_voxels_filtering(self, preprocessor_class, mock_two_lesions):
+    def test_min_volume_filtering(self, preprocessor_class, mock_two_lesions):
         """
-        Edge Case: Components smaller than min_voxels should be ignored.
+        Edge Case: Components smaller than min_volume should be ignored.
         """
         image, seg = mock_two_lesions
 
@@ -164,9 +169,9 @@ class TestEdgeCases:
 
         preprocessor = preprocessor_class()
 
-        # Set min_voxels higher than 1 so the noise speck is ignored
+        # Set min_volume higher than 1 so the noise speck is ignored
         # The fixture has actual lesions of size 1000 voxels (10x10x10)
-        components_gen = preprocessor.stream_components(image, seg, min_voxels=10)
+        components_gen = preprocessor.stream_components(image, seg, min_volume=10)
         components = list(components_gen)
 
         # We assume the implementation correctly calculates connected components.

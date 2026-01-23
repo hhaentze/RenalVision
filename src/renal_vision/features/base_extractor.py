@@ -21,9 +21,9 @@ class BaseFeatureExtractor(ABC):
     3. Delegation (calling _extract_single_lesion for each component).
     """
 
-    def __init__(self, preprocessor: BasePreprocessor, min_voxels: int = 10) -> None:
+    def __init__(self, preprocessor: BasePreprocessor, min_volume: int = 400) -> None:
         self.preprocessor = preprocessor
-        self.min_voxels = min_voxels
+        self.min_volume = min_volume
 
     def extract(
         self,
@@ -44,7 +44,7 @@ class BaseFeatureExtractor(ABC):
 
         # 3. Iterate over all lesions
         component_stream = self.preprocessor.stream_components(
-            img_processed, seg_processed, self.min_voxels
+            img_processed, seg_processed, self.min_volume
         )
 
         for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
@@ -72,7 +72,7 @@ class BaseFeatureExtractor(ABC):
         augmentation_id = 0
         for img_processed, seg_processed, is_augmented in data_stream:
             component_stream = self.preprocessor.stream_components(
-                img_processed, seg_processed, self.min_voxels
+                img_processed, seg_processed, self.min_volume
             )
             for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
                 feats = self._extract_single_lesion(img_comp, seg_comp)
