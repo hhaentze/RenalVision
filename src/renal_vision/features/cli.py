@@ -78,6 +78,15 @@ def run_extract(args: argparse.Namespace) -> None:
             preprocessor=preprocessor,
             min_volume=args.min_volume,
         )
+    elif args.extractor == "embeddings_ctfm":
+        from .embeddings_ctfm import CTFMExtractor
+        from .preprocessing import CTFMPreprocessor
+
+        preprocessor = CTFMPreprocessor(label_map=label_map, normalize=True)
+        extractor = CTFMExtractor(
+            preprocessor=preprocessor,
+            min_volume=args.min_volume,
+        )
     else:
         # Placeholder for future extractors
         raise ValueError(f"Unknown extractor type: {args.extractor}")
@@ -125,7 +134,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         help="Path to JSON file containing label mapping (e.g. {'2': 1, '3': 2})",
     )
     parser.add_argument(
-        "--min-voxels", type=int, default=10, help="Minimum lesion size in voxels to process."
+        "--min-volume", type=int, default=100, help="Minimum lesion size in voxels to process."
     )
 
     # Augmentation
