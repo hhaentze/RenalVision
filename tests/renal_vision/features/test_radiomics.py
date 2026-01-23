@@ -1,9 +1,8 @@
 import numpy as np
 
-from renal_vision.features.preprocessing import BasePreprocessor
-
 # Adjust imports to match your actual package structure
-from renal_vision.features.radiomics import RadiomicsExtractor
+from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
+from renal_vision.features.preprocessing import BasePreprocessor
 
 
 class FakePreprocessor(BasePreprocessor):
@@ -15,7 +14,7 @@ class FakePreprocessor(BasePreprocessor):
     def __init__(self):
         super().__init__()
 
-    def stream_components(self, image, seg, min_voxels=10):
+    def stream_components(self, image, seg, min_volume=400):
         # Yields: (image_np, mask_np, metadata)
         img = np.zeros((50, 50, 50))
         seg = np.zeros((50, 50, 50))

@@ -5,7 +5,7 @@ Preprocessing logic using MONAI for CT images.
 import copy
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -142,7 +142,7 @@ class BasePreprocessor(ABC):
         self,
         image: MetaTensor,
         seg: MetaTensor,
-        min_voxels: int = 10,
+        min_volume: int = 100,
     ) -> Generator[Tuple[np.ndarray, np.ndarray, dict[str, int]], None, None]:
         """
         Returns generator over individual connected components in the segmentation.
@@ -157,6 +157,10 @@ class BasePreprocessor(ABC):
         classes = np.unique(seg)
         classes = classes[classes > 0]
 
+        # calculate voxel_volume
+        spacing = np.linalg.norm(image.meta["affine"], axis=0)
+        voxel_volume = np.prod(spacing)
+
         for c_id in classes:
             # Create binary mask for this class
             class_mask = seg == c_id
@@ -168,8 +172,8 @@ class BasePreprocessor(ABC):
                 component_mask = seg * 0  # new empty meta tensor
                 component_mask[labeled_mask == comp_id] = 1
 
-                volume = int(np.sum(component_mask))
-                if volume < min_voxels:
+                volume = int(np.sum(component_mask) * voxel_volume)
+                if volume < min_volume:
                     continue  # skip small components
 
                 # Apply cropping transforms
@@ -203,6 +207,7 @@ class CTPreprocessor(BasePreprocessor):
         normalize: bool = True,
         orientation: str = "RAS",
         heavy_augmentations: bool = False,
+        rough_crop_margin: int | Sequence[int] = 20,
     ):
         self.target_spacing = target_spacing
         self.window_center = window_center
@@ -211,10 +216,10 @@ class CTPreprocessor(BasePreprocessor):
         self.normalize = normalize
         self.orientation = orientation
 
+        if isinstance(rough_crop_margin, int):
+            rough_crop_margin = [rough_crop_margin] * 3
         rough_crop_margin = [
-            int(30 // target_spacing[0]),
-            int(30 // target_spacing[1]),
-            int(20 // target_spacing[2]),
+            int(rcm // target_spacing[i]) for i, rcm in enumerate(rough_crop_margin)
         ]
 
         # 1. Base Transforms
@@ -227,6 +232,7 @@ class CTPreprocessor(BasePreprocessor):
                 target_labels=list(self.label_map.values()),
                 dtype=np.int16,
             ),
+            Orientationd(keys=["image", "seg"], axcodes=self.orientation, lazy=True),
             Spacingd(
                 keys=["image", "seg"],
                 pixdim=self.target_spacing,
@@ -237,22 +243,21 @@ class CTPreprocessor(BasePreprocessor):
             CropForegroundd(
                 keys=["image", "seg"], source_key="seg", margin=rough_crop_margin, lazy=True
             ),
-            Orientationd(keys=["image", "seg"], axcodes=self.orientation, lazy=True),
         ]
 
         # 2. Augmentation
         aug_transforms = [
             # Spatial Transforms (Anatomy & Positioning)
-            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=0),
-            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=1),
-            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=2),
-            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(0, 1)),
-            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(0, 2)),
-            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(1, 2)),
+            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=0, lazy=True),
+            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=1, lazy=True),
+            RandFlipd(keys=["image", "seg"], prob=0.3, spatial_axis=2, lazy=True),
+            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(0, 1), lazy=True),
+            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(0, 2), lazy=True),
+            RandRotate90d(keys=["image", "seg"], prob=0.3, max_k=3, spatial_axes=(1, 2), lazy=True),
             # Intensity Variation
             RandShiftIntensityd(keys=["image"], offsets=10, prob=0.3),
             # Simulate slightly incorrect segmentations
-            RandAffined(keys=["seg"], prob=0.5, translate_range=2, mode="nearest"),
+            RandAffined(keys=["seg"], prob=0.5, translate_range=2, mode="nearest", lazy=True),
         ]
 
         if heavy_augmentations:
@@ -265,6 +270,7 @@ class CTPreprocessor(BasePreprocessor):
                     translate_range=(3, 3, 3),  # Shift center by +/- 3 mm
                     mode=("bilinear", "nearest"),  # Bilinear for image, Nearest for mask
                     padding_mode="border",
+                    lazy=True,
                 ),
                 # 3. Intensity Transforms (Scanner Variation)
                 RandGaussianNoised(keys=["image"], prob=0.3, mean=0.0, std=0.1),
@@ -374,8 +380,8 @@ class MevisPreprocessor(CTPreprocessor):
         config["name"] = "MevisPreprocessor"
         return config
 
-    def __init__(self, **kwargs):
-        super().__init__(heavy_augmentations=True, **kwargs)
+    def __init__(self, target_spacing: Tuple[float, float, float] = (1.0, 1.0, 3.0), **kwargs):
+        super().__init__(target_spacing=target_spacing, heavy_augmentations=True, **kwargs)
 
         # 4. Cropping Transforms
         self.crop_transforms = [
@@ -389,4 +395,37 @@ class MevisPreprocessor(CTPreprocessor):
             # If the patient's body doesn't fill the 64,64 frame (e.g. at the edge), pad with 0.
             SpatialPadd(keys=["image", "seg"], spatial_size=(64, 64, -1)),
             Resized(keys=["image", "seg"], mode=["area", "nearest"], spatial_size=(64, 64, -1)),
+        ]
+
+
+class CTFMPreprocessor(CTPreprocessor):
+    """
+    Preprocessor using CTFM inspired cropping and normalization:
+    - load images in SPL orientation
+    - crop without resizing
+    """
+
+    def get_config(self) -> Dict[str, Any]:
+        config = super().get_config()
+        config["name"] = "CTFMPreprocessor"
+        return config
+
+    def __init__(self, target_spacing: Tuple[float, float, float] = (3.0, 1.0, 1.0), **kwargs):
+        super().__init__(
+            orientation="SPL",
+            target_spacing=target_spacing,
+            heavy_augmentations=True,
+            rough_crop_margin=60,
+            **kwargs,
+        )
+
+        self.crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
+            MinimumCropForegroundd(
+                keys=["image", "seg"],
+                source_key="seg",
+                min_shape=(24, 128, 128),
+                margin=10,
+            ),
+            SpatialPadd(keys=["image", "seg"], spatial_size=(24, 128, 128)),
         ]

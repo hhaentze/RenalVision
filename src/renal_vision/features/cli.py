@@ -16,7 +16,7 @@ def run_extract(args: argparse.Namespace) -> None:
 
     import pandas as pd
 
-    from .base import BaseFeatureExtractor
+    from .base_extractor import BaseFeatureExtractor
     from .dataset import FeatureDatasetProcessor
     from .preprocessing import BasePreprocessor
 
@@ -49,34 +49,34 @@ def run_extract(args: argparse.Namespace) -> None:
     preprocessor: BasePreprocessor
     extractor: BaseFeatureExtractor
     if args.extractor == "radiomics":
+        from .embeddings_radiomics import RadiomicsExtractor
         from .preprocessing import CTPreprocessor
-        from .radiomics import RadiomicsExtractor
 
         preprocessor = CTPreprocessor(label_map=label_map, normalize=False)
         extractor = RadiomicsExtractor(
             preprocessor=preprocessor,
-            min_voxels=args.min_voxels,
+            min_volume=args.min_volume,
             feature_names=None,  # Default to all
         )
 
     elif args.extractor == "embeddings_fmcib":
-        from .fmcib_embeddings import EmbeddingExtractor
+        from .embeddings_fmcib import FMCIBExtractor
         from .preprocessing import FMCIBPreprocessor
 
         preprocessor = FMCIBPreprocessor(label_map=label_map, normalize=True)
-        extractor = EmbeddingExtractor(
+        extractor = FMCIBExtractor(
             preprocessor=preprocessor,
-            min_voxels=args.min_voxels,
+            min_volume=args.min_volume,
         )
 
     elif args.extractor == "embeddings_mevis":
-        from .mevis_embeddings import MevisExtractor
+        from .embeddings_mevis import MevisExtractor
         from .preprocessing import MevisPreprocessor
 
         preprocessor = MevisPreprocessor(label_map=label_map, normalize=True)
         extractor = MevisExtractor(
             preprocessor=preprocessor,
-            min_voxels=args.min_voxels,
+            min_volume=args.min_volume,
         )
     else:
         # Placeholder for future extractors

@@ -45,7 +45,7 @@ class MinimumCropForeground(CropForeground):
         # Ensure the spatial size is at least `self.min_shape`
         spatial_size = np.maximum(orig_spatial_size, np.asarray(self.min_shape))
 
-        # Make the spatial size divisible by `k`
+        # Make the spatial size divisible by `k`(default k = 1)
         spatial_size = np.asarray(
             compute_divisible_spatial_size(spatial_size.tolist(), k=self.k_divisible)
         )

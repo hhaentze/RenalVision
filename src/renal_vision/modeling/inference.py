@@ -13,12 +13,12 @@ from monai.transforms import SaveImage
 from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
+from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
 from renal_vision.features.preprocessing import (
     CTPreprocessor,
     FMCIBPreprocessor,
     ImageLike,
 )
-from renal_vision.features.radiomics import RadiomicsExtractor
 
 from .models import ModelBundle, predict, predict_proba
 
@@ -76,7 +76,7 @@ class LesionPredictor:
         extractor_type = config["type"]
         if extractor_type == "radiomics":
             # Filter out keys that aren't arguments to __init__
-            valid_keys = {"feature_names", "min_voxels"}
+            valid_keys = {"feature_names", "min_volume"}
             ext_kwargs = {k: v for k, v in config.items() if k in valid_keys}
             return RadiomicsExtractor(preprocessor=preprocessor, **ext_kwargs)
         else:
@@ -138,7 +138,7 @@ class LesionPredictor:
         if num_lesions == 0:
             raise ValueError(
                 "Extractor could not handle lesion. Volume might be too small.",
-                f"Supported min_voxels: {self.extractor.min_voxels}",
+                f"Supported min_volume: {self.extractor.min_volume}",
             )
         if num_lesions > 1:
             raise Exception("This should never happen.")

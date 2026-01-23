@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from renal_vision.features.base import BaseFeatureExtractor
+from renal_vision.features.base_extractor import BaseFeatureExtractor
 from renal_vision.features.preprocessing import BasePreprocessor
 
 
@@ -16,7 +16,7 @@ class FakePreprocessor(BasePreprocessor):
         seg = self._prepare_data_point(seg)
         return image, seg
 
-    def stream_components(self, image, seg, min_voxels=10):
+    def stream_components(self, image, seg, min_volume=400):
         # Always yield exactly 2 dummy components
         # Yields: (image_np, mask_np, metadata)
         yield np.ones((10, 10, 10)), np.ones((10, 10, 10)), {"class_id": 1, "volume": 1000}
