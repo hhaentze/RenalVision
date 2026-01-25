@@ -15,13 +15,20 @@ endef
 install:
 	$(INSTALL_RADIOMICS_CORE)
 	pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-	pip install -e .
+	pip install -e ".[radiomics]"
 
 install-dev:
 	$(INSTALL_RADIOMICS_CORE)
 	pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-	pip install -e ".[dev]"
+	pip install -e ".[dev, radiomics]"
 	pre-commit install
+
+# default CTFM is very heavy (forces cuda GPU), additionally, pydantic throws version conflicts
+# -> we only install the front door
+# Core dependencies are already covered by the base installation
+install-all: install-dev
+	pip install -e ".[mevis]"
+	pip install lighter-zoo==0.1.3 foundation-cancer-image-biomarker==1.0.0 --no-deps
 
 # Quality Checks
 lint:
@@ -33,7 +40,7 @@ type:
 
 # Testing (Generates coverage automatically via config)
 test:
-	pytest --cov --cov-report=xml --cov-report=term
+	pytest -m "not local_only"
 
 # Formatting (Fixes code)
 format:
