@@ -225,6 +225,7 @@ class CTPreprocessor(BasePreprocessor):
         # 1. Base Transforms
         base_transforms = [
             EnsureChannelFirstd(keys=["image", "seg"], channel_dim="no_channel"),
+            ConditionalAddChanneld(keys=["image", "seg"]),
             EnsureTyped(keys=["image", "seg"]),
             MapLabelValued(
                 keys=["seg"],
