@@ -84,3 +84,27 @@ def _validate_distribution(counts: np.ndarray, class_names: List[Any], min_sampl
                     f"Fold {f_idx} is under-represented: "
                     f"Class '{class_name}' has only {int(row[c_idx])} samples."
                 )
+
+
+def describe_data(features, target_column="class_id"):
+    n_cases = features["case"].nunique()
+    n_lesions = len(features[~features["augmented"]])
+    print(f"Found entries for {n_lesions} lesions from {n_cases} cases.")
+
+    classes = features[target_column].unique()
+    classes.sort()
+    print(f"Found {len(classes)} classes: {classes}")
+
+    for cl in classes:
+        n_cl_lesions = len(features[(features[target_column] == cl) & (~features["augmented"])])
+        print(f"  Class {cl}: {n_cl_lesions} lesions")
+
+    if "source" in features.columns:
+        sources = features["source"].unique()
+        print(f"Data sources: {[str(src) for src in sources]}")
+        for src in sources:
+            n_src_lesions = len(features[(features["source"] == src) & (~features["augmented"])])
+            print(f"  {src}: {n_src_lesions} lesions")
+
+    oversampling_factor = (len(features) - n_lesions) / n_lesions
+    print(f"Each lesion was augmented {oversampling_factor:.1f} times on average.")

@@ -10,7 +10,8 @@ import torch
 from lighter_zoo import SegResEncoder
 
 from .base_extractor import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, CTPreprocessor
+from .base_preprocessor import BasePreprocessor
+from .preprocessing import CTPreprocessor
 
 
 class CTFMExtractor(BaseFeatureExtractor):
@@ -20,12 +21,14 @@ class CTFMExtractor(BaseFeatureExtractor):
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
-            preprocessor = CTPreprocessor(normalize=True)
+            preprocessor = CTPreprocessor()
 
         super().__init__(preprocessor, min_volume)
 
         self._active_features = [f"F{f}" for f in range(512)]
-        self.model = SegResEncoder.from_pretrained("project-lighter/ct_fm_feature_extractor")
+        self.model = SegResEncoder.from_pretrained(
+            "project-lighter/ct_fm_feature_extractor", local_files_only=True
+        )
         self.model.eval()
 
     @property

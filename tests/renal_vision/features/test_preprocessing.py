@@ -20,7 +20,7 @@ class TestCTPreprocessor:
     def test_call_structure_and_types(self, mock_single_lesion):
         """Verify __call__ returns MetaTensors of correct dimensionality."""
         image, seg = mock_single_lesion
-        preprocessor = CTPreprocessor(normalize=True)
+        preprocessor = CTPreprocessor()
 
         # Act
         out_img, out_seg = preprocessor(image, seg)
@@ -34,27 +34,41 @@ class TestCTPreprocessor:
         assert out_img.ndim == 4  # (D, H, W)
         assert out_seg.ndim == 4
 
-    def test_augmentation_stream_count(self, mock_single_lesion):
-        """Verify stream_augmented yields original + N augmentations."""
-        image, seg = mock_single_lesion
+    def test_volume_filtering1(self, mock_two_lesions):
+        """Verify that all lesions are found"""
+
+        image, seg = mock_two_lesions
         preprocessor = CTPreprocessor()
-        n_aug = 3
 
         # Act
-        generator = preprocessor.stream_augmented(image, seg, n_augmentations=n_aug)
-        results = list(generator)
+        _, out_seg = preprocessor(image, seg)
+        valid_components, metadata_list = preprocessor.filter_components(out_seg, min_volume=1)
 
         # Assert
-        # Should yield: 1 original + 3 augmented = 4 total
-        assert len(results) == n_aug + 1
+        assert len(metadata_list) == 2, "Should detect the 2 synthetic lesions created in fixture"
+        assert len(np.unique(valid_components)) == 3, "Should include the classes [0,1,2]"
+        assert metadata_list[0]["volume"] == 4000
+        assert metadata_list[1]["volume"] == 1000
+        assert metadata_list[0]["class_id"] == 2
+        assert metadata_list[1]["class_id"] == 1
 
-        # Check first item is not augmented
-        _, _, is_aug_first = results[0]
-        assert is_aug_first is False
+    def test_volume_filtering2(self, mock_two_lesions):
+        """Verify that small lesions are excluded"""
 
-        # Check subsequent items are augmented
-        _, _, is_aug_second = results[1]
-        assert is_aug_second is True
+        image, seg = mock_two_lesions
+        preprocessor = CTPreprocessor()
+
+        # Act
+        _, out_seg = preprocessor(image, seg)
+        valid_components, metadata_list = preprocessor.filter_components(out_seg, min_volume=1001)
+
+        # Assert
+        assert len(metadata_list) == 1, (
+            "Should detect one of the two synthetic lesions created in fixture"
+        )
+        assert len(np.unique(valid_components)) == 2, "Should include the classes [0,2]"
+        assert metadata_list[0]["volume"] == 4000
+        assert metadata_list[0]["class_id"] == 2
 
 
 class TestCropPreprocessors:
@@ -71,7 +85,7 @@ class TestCropPreprocessors:
 
         # Act
         # We expect 2 components based on the fixture data
-        components = list(preprocessor.stream_components(image, seg))
+        components = list(preprocessor.stream_components(image, seg, min_volume=1))
 
         # Assert
         assert len(components) == 2, "Should detect the 2 synthetic lesions created in fixture"
@@ -131,11 +145,51 @@ class TestCropPreprocessors:
             assert "volume" in metadata
 
 
+class TestAugmentations:
+    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
+    HEAVY_AUG_PREPROCESSORS = [FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
+
+    @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
+    def test_no_augmentation1(self, preprocessor_class, mock_single_lesion):
+        image, seg = mock_single_lesion
+        preprocessor = preprocessor_class()
+
+        component1 = next(preprocessor.stream_components(image, seg, min_volume=1))
+        component2 = next(preprocessor.stream_components(image, seg, min_volume=1))
+
+        assert np.array_equal(component1[0], component2[0]), "images should be equal"
+        assert np.array_equal(component1[1], component2[1]), "segmentations should be equal"
+        assert component1[2] == component2[2], "metadata should be equal"
+
+    @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
+    def test_no_augmentation2(self, preprocessor_class, mock_single_lesion):
+        image, seg = mock_single_lesion
+        preprocessor = preprocessor_class()
+
+        _img1, _seg1 = preprocessor(image, seg)
+        _img2, _seg2 = preprocessor(image, seg)
+        component1 = next(preprocessor.stream_components(_img1, _seg1, min_volume=1))
+        component2 = next(preprocessor.stream_components(_img2, _seg2, min_volume=1))
+
+        assert np.array_equal(component1[0], component2[0]), "images should be equal"
+        assert np.array_equal(component1[1], component2[1]), "segmentations should be equal"
+        assert component1[2] == component2[2], "metadata should be equal"
+
+    @pytest.mark.parametrize("preprocessor_class", HEAVY_AUG_PREPROCESSORS)
+    def test_augmentation(self, preprocessor_class, mock_single_lesion):
+        image, seg = mock_single_lesion
+        preprocessor = preprocessor_class()
+
+        component1 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
+        component2 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
+
+        assert not np.array_equal(component1[0], component2[0]), "images should not be equal"
+        assert component1[2] == component2[2], "metadata should be equal"
+
+
 # ==========================================
 # 2. Edge Case Tests
 # ==========================================
-
-
 class TestEdgeCases:
     ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
 

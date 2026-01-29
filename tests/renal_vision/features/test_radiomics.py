@@ -1,8 +1,9 @@
 import numpy as np
 
+from renal_vision.features.base_preprocessor import BasePreprocessor
+
 # Adjust imports to match your actual package structure
 from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
-from renal_vision.features.preprocessing import BasePreprocessor
 
 
 class FakePreprocessor(BasePreprocessor):

@@ -12,7 +12,8 @@ from monai.networks.nets import resnet50
 from torch import nn
 
 from .base_extractor import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, FMCIBPreprocessor
+from .base_preprocessor import BasePreprocessor
+from .preprocessing import FMCIBPreprocessor
 
 
 # Helper function to manage the cache logic
@@ -210,7 +211,7 @@ class FMCIBExtractor(BaseFeatureExtractor):
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
-            preprocessor = FMCIBPreprocessor(normalize=True)
+            preprocessor = FMCIBPreprocessor()
 
         super().__init__(preprocessor, min_volume)
 

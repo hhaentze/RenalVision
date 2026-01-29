@@ -10,7 +10,8 @@ import torch
 from torch import nn
 
 from .base_extractor import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, MevisPreprocessor
+from .base_preprocessor import BasePreprocessor
+from .preprocessing import MevisPreprocessor
 
 os.environ["MMM_LICENSE_ACCEPTED"] = "i accept"
 from mmm.labelstudio_ext.NativeBlocks import DEFAULT_MODEL, MMM_MODELS, NativeBlocks
@@ -23,7 +24,7 @@ class MevisExtractor(BaseFeatureExtractor):
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
-            preprocessor = MevisPreprocessor(normalize=True)
+            preprocessor = MevisPreprocessor()
 
         super().__init__(preprocessor, min_volume)
 

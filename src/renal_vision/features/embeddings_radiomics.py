@@ -10,7 +10,8 @@ import SimpleITK as sitk
 from radiomics import featureextractor
 
 from .base_extractor import BaseFeatureExtractor
-from .preprocessing import BasePreprocessor, CTPreprocessor
+from .base_preprocessor import BasePreprocessor
+from .preprocessing import CTPreprocessor
 
 
 class RadiomicsExtractor(BaseFeatureExtractor):
@@ -22,7 +23,7 @@ class RadiomicsExtractor(BaseFeatureExtractor):
     ) -> None:
         # 1. Define Preprocessor
         if preprocessor is None:
-            preprocessor = CTPreprocessor(normalize=False)
+            preprocessor = CTPreprocessor()
         super().__init__(preprocessor, min_volume)
 
         # 2. Configure PyRadiomics Extractor
