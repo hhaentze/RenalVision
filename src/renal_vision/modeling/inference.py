@@ -13,11 +13,11 @@ from monai.transforms import SaveImage
 from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
+from renal_vision.features.base_preprocessor import ImageLike
 from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
 from renal_vision.features.preprocessing import (
     CTPreprocessor,
     FMCIBPreprocessor,
-    ImageLike,
 )
 
 from .models import ModelBundle, predict, predict_proba

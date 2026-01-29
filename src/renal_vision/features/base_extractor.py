@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from .preprocessing import BasePreprocessor, ImageLike
+from .base_preprocessor import BasePreprocessor, ImageLike
 
 
 class BaseFeatureExtractor(ABC):
@@ -37,16 +37,16 @@ class BaseFeatureExtractor(ABC):
         Returns:
             List of dictionaries (one per valid lesion found in the image).
         """
-        # 1. Run coupled preprocessor
-        img_processed, seg_processed = self.preprocessor(image, seg, augment=augment)
 
         results: List[Dict[str, Any]] = []
 
-        # 3. Iterate over all lesions
+        # 1. Run coupled preprocessor
+        img_processed, seg_processed = self.preprocessor(image, seg, augment=augment)
+
+        # 2. Iterate over all lesions
         component_stream = self.preprocessor.stream_components(
             img_processed, seg_processed, self.min_volume
         )
-
         for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
             feats = self._extract_single_lesion(img_comp, seg_comp)
             feats["lesion_id"] = lesion_id
@@ -67,13 +67,18 @@ class BaseFeatureExtractor(ABC):
         """
 
         results: List[Dict[str, Any]] = []
-        data_stream = self.preprocessor.stream_augmented(image, seg, n_augmentations)
 
-        augmentation_id = 0
-        for img_processed, seg_processed, is_augmented in data_stream:
+        # 1. Run coupled preprocessor
+        img_processed, seg_processed = self.preprocessor(image, seg, augment=False)
+
+        # 2. Iterate n+1 times over the image
+        apply_augment = [False] + [True] * n_augmentations
+        for augmentation_id, is_augmented in enumerate(apply_augment):
             component_stream = self.preprocessor.stream_components(
-                img_processed, seg_processed, self.min_volume
+                img_processed, seg_processed, self.min_volume, augment=is_augmented
             )
+
+            # 3. Extract all lesions
             for lesion_id, (img_comp, seg_comp, meta) in enumerate(component_stream):
                 feats = self._extract_single_lesion(img_comp, seg_comp)
                 feats["lesion_id"] = lesion_id
@@ -82,8 +87,6 @@ class BaseFeatureExtractor(ABC):
                 feats["augmented"] = is_augmented
                 feats["aug_id"] = augmentation_id
                 results.append(feats)
-
-            augmentation_id += 1
 
         return results
 

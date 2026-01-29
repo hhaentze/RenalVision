@@ -17,8 +17,8 @@ def run_extract(args: argparse.Namespace) -> None:
     import pandas as pd
 
     from .base_extractor import BaseFeatureExtractor
+    from .base_preprocessor import BasePreprocessor
     from .dataset import FeatureDatasetProcessor
-    from .preprocessing import BasePreprocessor
 
     def load_label_map(json_path: Optional[str]) -> Dict[int, int]:
         """Load label mapping from JSON file."""
@@ -52,37 +52,37 @@ def run_extract(args: argparse.Namespace) -> None:
         from .embeddings_radiomics import RadiomicsExtractor
         from .preprocessing import CTPreprocessor
 
-        preprocessor = CTPreprocessor(label_map=label_map, normalize=False)
+        preprocessor = CTPreprocessor(label_map=label_map)
         extractor = RadiomicsExtractor(
             preprocessor=preprocessor,
             min_volume=args.min_volume,
             feature_names=None,  # Default to all
         )
 
-    elif args.extractor == "embeddings_fmcib":
+    elif args.extractor == "fmcib":
         from .embeddings_fmcib import FMCIBExtractor
         from .preprocessing import FMCIBPreprocessor
 
-        preprocessor = FMCIBPreprocessor(label_map=label_map, normalize=True)
+        preprocessor = FMCIBPreprocessor(label_map=label_map)
         extractor = FMCIBExtractor(
             preprocessor=preprocessor,
             min_volume=args.min_volume,
         )
 
-    elif args.extractor == "embeddings_mevis":
+    elif args.extractor == "mevis":
         from .embeddings_mevis import MevisExtractor
         from .preprocessing import MevisPreprocessor
 
-        preprocessor = MevisPreprocessor(label_map=label_map, normalize=True)
+        preprocessor = MevisPreprocessor(label_map=label_map)
         extractor = MevisExtractor(
             preprocessor=preprocessor,
             min_volume=args.min_volume,
         )
-    elif args.extractor == "embeddings_ctfm":
+    elif args.extractor == "ctfm":
         from .embeddings_ctfm import CTFMExtractor
         from .preprocessing import CTFMPreprocessor
 
-        preprocessor = CTFMPreprocessor(label_map=label_map, normalize=True)
+        preprocessor = CTFMPreprocessor(label_map=label_map)
         extractor = CTFMExtractor(
             preprocessor=preprocessor,
             min_volume=args.min_volume,
@@ -125,7 +125,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "embeddings_fmcib", "embeddings_mevis"],
+        choices=["radiomics", "mevis", "fmcib", "ctfm"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
@@ -145,12 +145,6 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         help="Number of augmented copies to generate per sample (default: 0).",
     )
 
-    # Preprocessing Overrides
-    parser.add_argument(
-        "--normalize",
-        action="store_true",
-        help="If set, normalize image intensities to [0, 1]. Default is False (preserve HU).",
-    )
     parser.set_defaults(func=run_extract)
 
     # Multiprocessing

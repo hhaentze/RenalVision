@@ -41,10 +41,10 @@ def mock_two_lesions() -> Tuple[MetaTensor, MetaTensor]:
     image = MetaTensor(img_array, affine=torch.eye(3))
     seg_array = torch.zeros(*spatial_shape)
 
-    # Lesion 1: 10x10x10 cube at [20:30, 20:30, 20:30]
+    # Lesion 1: 10x10x10 cube
     seg_array[20:30, 20:30, 20:30] = 1
-    # Lesion 2: 10x10x10 cube at [60:70, 60:70, 60:70]
-    seg_array[60:70, 60:70, 60:70] = 1
+    # Lesion 2: 10x20x20 cube
+    seg_array[60:70, 60:80, 60:80] = 2
 
     seg = MetaTensor(seg_array, affine=torch.eye(3))
     return image, seg

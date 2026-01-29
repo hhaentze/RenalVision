@@ -30,7 +30,6 @@ def worker_init(cores_per_worker: int):
     os.environ["NUMEXPR_NUM_THREADS"] = str(cores_per_worker)
 
     # 2. Set Torch-specific thread limits
-    # This is often more reliable than environment variables for PyTorch
     torch.set_num_threads(cores_per_worker)
 
 
@@ -50,7 +49,6 @@ def _process_single_row(args):
     local_results = []
 
     try:
-        # print("DEBUG", "Extract features 1", flush=True)
         if augment_count > 0:
             lesion_features_list = extractor.extract_multiple_augmentations(
                 image_path, seg_path, augment_count
@@ -58,7 +56,6 @@ def _process_single_row(args):
         else:
             lesion_features_list = extractor.extract(image_path, seg_path)
 
-        # print("DEBUG", "Extract features 2", flush=True)
         for lesion_feats in lesion_features_list:
             entry = row_meta.copy()
             entry.update(lesion_feats)
@@ -112,8 +109,9 @@ class FeatureDatasetProcessor:
             }
         )
         current_batch: List[Dict[str, Any]] = []
+        writer: Optional[pq.ParquetWriter] = None
 
-        print(f"Starting parallel extraction with {num_jobs * cores_per_job} workers...")
+        print(f"Starting extraction with {num_jobs * cores_per_job} workers...")
 
         # Prepare arguments for the pool
         # Note: self.extractor must be picklable.
@@ -122,28 +120,37 @@ class FeatureDatasetProcessor:
             for _, row in input_df.iterrows()
         ]
 
-        with ProcessPoolExecutor(
-            max_workers=num_jobs, initializer=worker_init, initargs=(cores_per_job,)
-        ) as executor:
-            futures = [executor.submit(_process_single_row, task) for task in tasks]
-            writer: Optional[pq.ParquetWriter] = None
+        def handle_results(res_list: List[Dict]) -> None:
+            nonlocal writer, current_batch
 
-            for future in tqdm(as_completed(futures), total=len(tasks), desc="Processing"):
-                res_list = future.result()
-                if res_list:
-                    current_batch.extend(res_list)
+            if res_list:
+                current_batch.extend(res_list)
 
-                if len(current_batch) > batch_size:
-                    writer = self._write_batch_pyarrow(
-                        current_batch, tmp_path, writer, schema_blueprint
-                    )
-                    current_batch = []
-
-            # Final flush
-            if current_batch:
+            if len(current_batch) > batch_size:
                 writer = self._write_batch_pyarrow(
                     current_batch, tmp_path, writer, schema_blueprint
                 )
+                current_batch.clear()
+
+        if num_jobs > 1:
+            # --- Multiprocessing Path ---
+            with ProcessPoolExecutor(
+                max_workers=num_jobs, initializer=worker_init, initargs=(cores_per_job,)
+            ) as executor:
+                futures = [executor.submit(_process_single_row, task) for task in tasks]
+                for future in tqdm(as_completed(futures), total=len(tasks), desc="Processing"):
+                    handle_results(future.result())
+
+        else:
+            # --- Single Process / Debug Path ---
+            worker_init(cores_per_job)
+            for task in tqdm(tasks, desc="Processing (Single)"):
+                single_res: List[Any] = _process_single_row(task)
+                handle_results(single_res)
+
+        # Final flush
+        if current_batch:
+            writer = self._write_batch_pyarrow(current_batch, tmp_path, writer, schema_blueprint)
 
         # Finalize the file
         if writer is not None:
