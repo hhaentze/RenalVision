@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
+from prettytable import PrettyTable
 
 
 def generate_patient_fold_mapping(
@@ -95,9 +96,15 @@ def describe_data(features, target_column="class_id"):
     classes.sort()
     print(f"Found {len(classes)} classes: {classes}")
 
+    table = PrettyTable()
+    table.field_names = ["Class"] + [str(cl) for cl in classes]
+    counts = ["Support"]
     for cl in classes:
         n_cl_lesions = len(features[(features[target_column] == cl) & (~features["augmented"])])
-        print(f"  Class {cl}: {n_cl_lesions} lesions")
+        # print(f"  Class {cl}: {n_cl_lesions} lesions")
+        counts.append(n_cl_lesions)
+    table.add_row(counts)
+    print(table)
 
     if "source" in features.columns:
         sources = features["source"].unique()
