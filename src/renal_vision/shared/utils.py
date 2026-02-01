@@ -114,4 +114,5 @@ def describe_data(features, target_column="class_id"):
             print(f"  {src}: {n_src_lesions} lesions")
 
     oversampling_factor = (len(features) - n_lesions) / n_lesions
-    print(f"Each lesion was augmented {oversampling_factor:.1f} times on average.")
+    if oversampling_factor > 0:
+        print(f"Each lesion was augmented {oversampling_factor:.1f} times on average.")
