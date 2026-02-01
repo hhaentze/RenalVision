@@ -110,3 +110,31 @@ class BaseFeatureExtractor(ABC):
     @abstractmethod
     def get_config(self) -> Dict[str, Any]:
         pass
+
+
+class ZeroExtractor(BaseFeatureExtractor):
+    """Return only metadata without image features"""
+
+    def __init__(
+        self,
+        preprocessor: BasePreprocessor,
+        min_volume: int,
+    ) -> None:
+        super().__init__(preprocessor, min_volume)
+
+    def _extract_single_lesion(
+        self, image: np.ndarray, lesion_mask: np.ndarray
+    ) -> Dict[str, float]:
+        """Return Empty Dict"""
+        return {}
+
+    @property
+    def feature_names(self) -> List[str]:
+        return []
+
+    def get_config(self) -> Dict[str, Any]:
+        return {
+            "type": "ZeroExtractor",
+            "min_volume": self.min_volume,
+            "preprocessor": self.preprocessor.get_config(),
+        }
