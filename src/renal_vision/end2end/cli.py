@@ -44,7 +44,7 @@ def run_train(args: argparse.Namespace) -> None:
         min_volume=args.min_volume,
         batch_size=args.batch_size,
         lr=lr,
-        epochs=100,
+        epochs=args.epochs,
         num_workers=args.num_workers,
         pretrained=args.pretrained,
         cache_rate=args.cache_rate,
@@ -116,6 +116,12 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=400,
         help="Minimum lesion size in mm^3 to process. Default: 400 mm^3",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=100,
+        help="Number of epochs used for trainig",
     )
 
     # Multiprocessing
