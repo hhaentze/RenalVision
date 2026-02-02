@@ -15,9 +15,11 @@
 
 </div>
 
-RenalVision is a modular, high-performance platform for quantifying and classifying medical imaging lesions. Its architecture is completely modality-agnostic, separating the [**Data Engine**](src/renal_vision/features) from the [**Machine Learning Logic**](src/renal_vision/modeling).
+RenalVision is a modular, high-performance platform for quantifying and classifying renal lesions. Its architecture is completely modality-agnostic, separating the [**Data Engine**](src/renal_vision/features) from the [**Machine Learning Logic**](src/renal_vision/modeling).
 
 This platform allows researchers to decouple the heavy lifting of image processing (Radiomics, Neural Embeddings) from the rapid iteration of model training.
+
+![Workflow](images/workflow.webp)
 
 ## 🌟 Core Features
 
@@ -25,11 +27,9 @@ This platform allows researchers to decouple the heavy lifting of image processi
 * **Offline Feature Store:** Converts heavy NIfTI/NRRD/MHA datasets into lightweight, efficient Parquet feature stores.
 * **Self-Contained Models:** Trained models (`ModelBundle`) store their own preprocessing configuration, class mappings, and scaling logic, ensuring reproducible inference.
 * **Robust Inference:** Classify single or multiple lesions in a scan at once without any additional configurations. `LesionPredictor` handles it for you.
-* **Explainable-Ready:** Built-in support for classical ML (Logistic Regression, Decision Trees) and Gradient Boosting (XGBoost).
 
 ## 🛠️ Installation
-One of our depencies 'PyRadiomics' is unfortunately not well maintained and prevents us from running a simple pip install for python versions >= 3.10.
-You need to clone the repo and install it yourself with the help of make:
+Clone the repo and install it yourself with the help of make. We recommend python 3.10. The base installation includes only the radiomics support. If you want to run additional modules please specify these as additional dependencies.
 ```bash
 # Clone the repository
 git clone https://github.com/hhaentze/RenalVision.git
@@ -39,13 +39,15 @@ cd RenalVision
 make install
 # or for development
 make install-dev
+
+# Need more modules?
+make install; pip install ".[fmcib, ctfm, mevis]"
+# Alternatively
+make install-all
 ```
 
 ## 📋 TLDR
-Checkout our tutorials on how to create a binary [Tumor/Cyst](notebooks/demo_binary.ipynb)
-or a multiclass [Lesion-Subtype](notebooks/demo_multiclass.ipynb) classificator.
-
-Renal Vision comes with two pre-trained models that you can use from the get-go. Read more about that in the [Bundles](src/renal_vision/bundles) section.
+Renal Vision comes with five pre-trained models that you can use from the get-go: `radiomics_binary`, `radiomics`, `mevis`, `fmcib`, and `ctfm`. Read more about inference in the [Bundles](src/renal_vision/bundles) section.
 
 ## 🚀 Quick Start (CLI)
 The platform exposes a unified command-line interface: rv.
@@ -68,7 +70,7 @@ Or alternatively, use a foundation model:
 rv extract \
     --data ./data/dataset.csv \
     --output ./data/features/embeddings_v1.parquet \
-    --extractor embeddings \
+    --extractor ctfm \
     --augment 5
 ```
 This will save a parquet file as well as a summary of the extraction configurations the specified path.
@@ -100,7 +102,7 @@ rv infer \
     --output ./results/prediction_001.nii.gz
 ```
 
-To run our pretrained models simply set --model to either `TUMOR_CYST`or `HISTOLOGY_SUBTYPE`.
+To run our pretrained models simply set --model to either `radiomics_binary`, `radiomics`, `mevis`, `fmcib`, or `ctfm`
 
 ##
 
@@ -132,7 +134,7 @@ print(result)
   'class_name': 'Tumor',            # predicted class name
   'confidence': 0.997,              # proability of predicted class
   'probability': [[0.997, 0.003]],  # proabilities of all classes
-  'volume_voxels': 8726             # voxel volumes of target lesions
+  'volume': 8726                    # volume of target lesions in mm^3
  }
 ```
 
@@ -140,10 +142,10 @@ print(result)
 If you want to build your own data loader consider using one of our prepocessors, which efficiently combine repeated augmentation and sampling of multiple annotated target regions.
 
 ```python
-from renal_vision.features.preprocessing import CropPreprocessor
+from renal_vision.features.preprocessing import CTPreprocessor
 
 # initialise
-preprocessor = CropPreprocessor()
+preprocessor = CTPreprocessor()
 
 # load image and mask with base augmentations
 img, seg = preprocessor("img.nii","seg.nii", augment=False)
@@ -154,7 +156,7 @@ for img, seg, is_augmented in data_stream:
   # Do stuff
 
 # crop on all individual lesions
-component_stream = preprocessor.stream_components(img, seg,  min_voxels = 10):
+component_stream = preprocessor.stream_components(img, seg,  min_volume = 400):
 for lesion, lesion_mask, lesion_id, meta in component_stream:
   # Do stuff
 ```
