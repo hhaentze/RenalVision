@@ -61,6 +61,7 @@ def plot_confusion_matrix(
     class_names: List[str],
     output_path: Optional[str] = None,
     title: str = "Confusion Matrix",
+    dpi: int = 300,
 ) -> None:
     """Plot confusion matrix using Seaborn."""
     plt.figure(figsize=(8, 6))
@@ -72,7 +73,7 @@ def plot_confusion_matrix(
     plt.title(title)
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
 
@@ -82,6 +83,7 @@ def plot_multiclass_roc(
     n_classes: int,
     class_names: List[str],
     output_path: Optional[str] = None,
+    dpi: int = 300,
 ) -> None:
     """
     Plot ROC curves for binary (N=2) or multi-class (N>2) problems.
@@ -126,7 +128,7 @@ def plot_multiclass_roc(
     plt.legend(loc="lower right")
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
 
@@ -136,6 +138,7 @@ def plot_multiclass_pr_curve(
     n_classes: int,
     class_names: List[str],
     output_path: Optional[str] = None,
+    dpi: int = 300,
 ) -> None:
     """
     Plot Precision-Recall curves for binary or multi-class problems.
@@ -181,7 +184,7 @@ def plot_multiclass_pr_curve(
     plt.grid(True, linestyle="--", alpha=0.6)
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
 
@@ -191,6 +194,7 @@ def plot_cv_roc(
     n_classes: int,
     class_names: List[str],
     output_path: Optional[str] = None,
+    dpi: int = 300,
 ) -> None:
     """
     Plot Cross-Validated ROC curves with mean and variance (std dev).
@@ -257,7 +261,7 @@ def plot_cv_roc(
     plt.legend(loc="lower right")
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
 
@@ -267,6 +271,7 @@ def plot_cv_pr_curve(
     n_classes: int,
     class_names: List[str],
     output_path: Optional[str] = None,
+    dpi: int = 300,
 ) -> None:
     """
     Plot Cross-Validated Precision-Recall curves with mean and variance.
@@ -328,5 +333,5 @@ def plot_cv_pr_curve(
     plt.grid(True, linestyle="--", alpha=0.6)
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close()

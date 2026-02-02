@@ -225,7 +225,7 @@ class FMCIBExtractor(BaseFeatureExtractor):
 
     def get_config(self) -> Dict[str, Any]:
         return {
-            "type": "radiomics",
+            "type": "fmcib",
             "feature_names": self.feature_names,
             "min_volume": self.min_volume,
             "preprocessor": self.preprocessor.get_config(),
@@ -235,7 +235,7 @@ class FMCIBExtractor(BaseFeatureExtractor):
         self, image: np.ndarray, lesion_mask: np.ndarray
     ) -> Dict[str, float]:
         """
-        Calculate radiomics for the isolated binary lesion mask.
+        Calculate embeddings for the isolated binary lesion mask.
         """
         features: Dict[str, float] = {}
 
