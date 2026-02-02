@@ -10,8 +10,11 @@ T = TypeVar("T", bound=Enum)
 
 
 class ImplementedModels(Enum):
-    TUMOR_CYST = "tumor_cyst"
-    HISTOLOGY_SUBTYPE = "histology_subtype"
+    RADIOMICS_BINARY = "radiomics_binary"
+    RADIOMICS = "radiomics"
+    MEVIS = "mevis"
+    FMCIB = "fmcib"
+    CTFM = "CTFM"
 
 
 def load_model_bundle(model_identifier: ImplementedModels) -> ModelBundle:

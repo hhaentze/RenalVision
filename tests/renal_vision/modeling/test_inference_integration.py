@@ -12,10 +12,10 @@ class TestEndToEndInference:
     @pytest.fixture(scope="class")
     def real_predictor(self):
         """
-        Instantiates the REAL predictor with the TUMOR_CYST model.
+        Instantiates the REAL predictor with the binary radiomics model.
         This might take time to load, so we scope it to 'class' to load once.
         """
-        return LesionPredictor(model_identifier=ImplementedModels.TUMOR_CYST)
+        return LesionPredictor(model_identifier=ImplementedModels.RADIOMICS_BINARY)
 
     def test_smoke_infer_mask(self, real_predictor, mock_two_lesions):
         """

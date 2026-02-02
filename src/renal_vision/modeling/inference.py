@@ -14,10 +14,11 @@ from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
 from renal_vision.features.base_preprocessor import ImageLike
-from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
 from renal_vision.features.preprocessing import (
+    CTFMPreprocessor,
     CTPreprocessor,
     FMCIBPreprocessor,
+    MevisPreprocessor,
 )
 
 from .models import ModelBundle, predict, predict_proba
@@ -67,18 +68,34 @@ class LesionPredictor:
             preprocessor = CTPreprocessor(**args)
         elif prep_config["name"] == "FMCIBPreprocessor":
             preprocessor = FMCIBPreprocessor(**args)
-        elif prep_config["name"] == "StaticCropPreprocessor":
-            preprocessor = FMCIBPreprocessor(**args)
+        elif prep_config["name"] == "MEVISPreprocessor":
+            preprocessor = MevisPreprocessor(**args)
+        elif prep_config["name"] == "CTFMPreprocessor":
+            preprocessor = CTFMPreprocessor(**args)
         else:
             raise ValueError(f"Unknown preprocessort type in model config: {prep_config['name']}")
 
         # 2. Instantiate Extractor
+        # Filter out keys that aren't arguments to __init__
+        valid_keys = {"feature_names", "min_volume"}
+        ext_kwargs = {k: v for k, v in config.items() if k in valid_keys}
         extractor_type = config["type"]
         if extractor_type == "radiomics":
-            # Filter out keys that aren't arguments to __init__
-            valid_keys = {"feature_names", "min_volume"}
-            ext_kwargs = {k: v for k, v in config.items() if k in valid_keys}
+            from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
+
             return RadiomicsExtractor(preprocessor=preprocessor, **ext_kwargs)
+        elif extractor_type == "mevis":
+            from renal_vision.features.embeddings_mevis import MevisExtractor
+
+            return MevisExtractor(preprocessor=preprocessor, **ext_kwargs)
+        if extractor_type == "ctfm":
+            from renal_vision.features.embeddings_ctfm import CTFMExtractor
+
+            return CTFMExtractor(preprocessor=preprocessor, **ext_kwargs)
+        if extractor_type == "fmcib":
+            from renal_vision.features.embeddings_fmcib import FMCIBExtractor
+
+            return FMCIBExtractor(preprocessor=preprocessor, **ext_kwargs)
         else:
             raise ValueError(f"Unknown extractor type in model config: {extractor_type}")
 
