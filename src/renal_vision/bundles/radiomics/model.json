@@ -1,9 +1,13 @@
 {
     "model_type": "xgboost",
-    "n_classes": 2,
+    "n_classes": 6,
     "class_names": {
-        "0": "Tumor",
-        "1": "Cyst"
+        "0": "ccRCC",
+        "1": "pRCC",
+        "2": "chrRCC",
+        "3": "Oncocytoma",
+        "4": "Cyst",
+        "5": "Other"
     },
     "feature_names": [
         "original_firstorder_10Percentile",
@@ -187,7 +191,7 @@
             "original_shape_SurfaceVolumeRatio",
             "original_shape_VoxelVolume"
         ],
-        "min_voxels": 10,
+        "min_volume": 400,
         "preprocessor": {
             "name": "CTPreprocessor",
             "target_spacing": [
@@ -197,7 +201,7 @@
             ],
             "window_center": 40,
             "window_width": 400,
-            "normalize": false
+            "orientation": "RAS"
         }
     },
     "log_transform_features": []

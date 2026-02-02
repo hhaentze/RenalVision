@@ -17,17 +17,13 @@ from renal_vision.bundles import ImplementedModels
 predictor1 = LesionPredictor(model_identifier=ImplementedModels.HISTOLOGY_SUBTYPE)
 
 # Or just pass the string directly
-predictor2 =  LesionPredictor(model_identifier="TUMOR_CYST")
+predictor2 =  LesionPredictor(model_identifier="RADIOMICS_BINARY")
 ```
 
+All models are xgboost classifer trained on KiTS & Charité (10-fold cross-validated)
 
 ### 1. Radiomics based Tumor/Cyst classifier
-- identifier: **TUMOR_CYST**
-- xgboost model
-- trained on KiTS & Charité (80%)
-- validated on KiTS & Charité (20%)
-* F1: 0.95
-
+- identifier: **RADIOMICS_BINARY**
 Classes:
 ```python
 {
@@ -36,20 +32,13 @@ Classes:
 }
 ```
 
-
 <div align="center">
-  <img src="tumor_cyst/confusion_matrix.png" alt="Description of Image 1" width="30%">
-  <img src="tumor_cyst/roc_curves.png" alt="Description of Image 2" width="30%">
-  <img src="tumor_cyst/pr_curves.png" alt="Description of Image 3" width="30%">
+  <img src="radiomics_binary/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
+  <img src="radiomics_binary/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="radiomics_binary/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
 </div>
 
-### 2 Radiomics based histology-subtype classifier
-- identifier: **HISTOLOGY_SUBTYPE**
-- xgboost model
-- trained on KiTS & Charité (80%)
-- validated on KiTS & Charité (20%)
-* F1: 0.74
-
+### 2 Histology-subtype classifier
 Classes:
 ```python
 {
@@ -61,9 +50,26 @@ Classes:
     5: "Other",
 }
 ```
-
+- identifier: **RADIOMICS**
 <div align="center">
-  <img src="histology_subtype/confusion_matrix.png" alt="Description of Image 1" width="30%">
-  <img src="histology_subtype/roc_curves.png" alt="Description of Image 2" width="30%">
-  <img src="histology_subtype/pr_curves.png" alt="Description of Image 3" width="30%">
+  <img src="radiomics/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="radiomics/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
+- identifier: **MEVIS**
+<div align="center">
+  <img src="mevis/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="mevis/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
+- identifier: **FMCIB**
+<div align="center">
+  <img src="fmcib/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="fmcib/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
+- identifier: **CTFM**
+<div align="center">
+  <img src="ctfm/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="ctfm/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
 </div>

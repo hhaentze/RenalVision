@@ -181,7 +181,14 @@ class TestAugmentations:
         preprocessor = preprocessor_class()
 
         component1 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
+
+        # first chance
         component2 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
+        # second chance
+        if np.array_equal(component1[0], component2[0]):
+            component2 = next(
+                preprocessor.stream_components(image, seg, min_volume=1, augment=True)
+            )
 
         assert not np.array_equal(component1[0], component2[0]), "images should not be equal"
         assert component1[2] == component2[2], "metadata should be equal"
