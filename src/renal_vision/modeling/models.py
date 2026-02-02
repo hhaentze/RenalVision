@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.utils.class_weight import compute_sample_weight
@@ -21,6 +22,7 @@ class ModelType(Enum):
     LOGISTIC = "logistic"
     TREE = "tree"
     XGBOOST = "xgboost"
+    MLP = "mlp"
 
 
 class ModelBundle:
@@ -80,13 +82,12 @@ class ModelFactory:
 
     @staticmethod
     def create_model(model_type: str, n_classes: int, **kwargs: Any) -> BaseEstimator:
+        kwargs.setdefault("random_state", 42)
         if model_type == ModelType.LOGISTIC.value:
-            kwargs.setdefault("random_state", 42)
             kwargs.setdefault("max_iter", 1000)
             return LogisticRegression(**kwargs)
 
         elif model_type == ModelType.TREE.value:
-            kwargs.setdefault("random_state", 42)
             kwargs.setdefault("min_samples_leaf", 5)
             kwargs.setdefault("max_depth", 5)
             return DecisionTreeClassifier(**kwargs)
@@ -99,7 +100,6 @@ class ModelFactory:
             else:
                 kwargs.setdefault("objective", "multi:softprob")
                 kwargs.setdefault("num_class", n_classes)
-            kwargs.setdefault("random_state", 42)
             kwargs.setdefault("n_estimators", 100)
             kwargs.setdefault("learning_rate", 0.1)
             kwargs.setdefault("eval_metric", "mlogloss")
@@ -107,6 +107,12 @@ class ModelFactory:
             return XGBClassifier(
                 **kwargs,
             )
+        elif model_type == ModelType.MLP.value:
+            kwargs.setdefault("max_iter", 1000)
+            kwargs.setdefault("early_stopping", True)
+            kwargs.setdefault("n_iter_no_change", 10)
+            return MLPClassifier(**kwargs)
+
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
