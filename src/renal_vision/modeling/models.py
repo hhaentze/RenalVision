@@ -6,7 +6,7 @@ import json
 import pickle
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Protocol, Union
 
 import numpy as np
 from sklearn.base import BaseEstimator
@@ -18,11 +18,24 @@ from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 
 
+# Type alias for models that implement predict/predict_proba
+# This allows both sklearn models and our TorchModelWrapper
+class PredictorProtocol(Protocol):
+    """Protocol for any model that can predict and predict_proba."""
+
+    def predict(self, X: np.ndarray) -> np.ndarray: ...
+    def predict_proba(self, X: np.ndarray) -> np.ndarray: ...
+
+
+ModelLike = Union[BaseEstimator, PredictorProtocol]
+
+
 class ModelType(Enum):
     LOGISTIC = "logistic"
     TREE = "tree"
     XGBOOST = "xgboost"
     MLP = "mlp"
+    END2END = "end2end"
 
 
 class ModelBundle:
@@ -33,13 +46,13 @@ class ModelBundle:
 
     def __init__(
         self,
-        model: BaseEstimator,
-        scaler: Optional[StandardScaler],
+        model: ModelLike,
         feature_names: List[str],
         model_type: str,
         n_classes: int,
         extractor_config: Dict[str, Any],
         class_names: Dict[int, str],
+        scaler: Optional[StandardScaler] = None,
         log_transform_features: Optional[List[str]] = None,
     ):
         self.model = model
