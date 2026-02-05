@@ -269,9 +269,14 @@ class CTFMPreprocessor(CTPreprocessor):
         config["name"] = "CTFMPreprocessor"
         return config
 
-    def __init__(self, target_spacing: Tuple[float, float, float] = (3.0, 1.0, 1.0), **kwargs):
+    def __init__(
+        self,
+        target_spacing: Tuple[float, float, float] = (3.0, 1.0, 1.0),
+        orientation="SPL",
+        **kwargs,
+    ):
         super().__init__(
-            orientation="SPL",
+            orientation=orientation,
             target_spacing=target_spacing,
             heavy_augmentations=True,
             rough_crop_margin=60,

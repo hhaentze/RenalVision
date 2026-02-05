@@ -84,7 +84,8 @@ def plot_multiclass_roc(
     class_names: List[str],
     output_path: Optional[str] = None,
     dpi: int = 300,
-) -> None:
+    figsize=(10, 8),
+) -> Dict[Union[int, str], float]:
     """
     Plot ROC curves for binary (N=2) or multi-class (N>2) problems.
     Includes Micro/Macro averages.
@@ -100,7 +101,7 @@ def plot_multiclass_roc(
     tpr: Dict[Union[int, str], Any] = {}
     roc_auc: Dict[Union[int, str], float] = {}
 
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=figsize)
 
     # Calculate ROC for each class
     for i in range(n_classes):
@@ -129,7 +130,10 @@ def plot_multiclass_roc(
 
     if output_path:
         plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    else:
+        plt.show()
     plt.close()
+    return roc_auc
 
 
 def plot_multiclass_pr_curve(
@@ -139,7 +143,8 @@ def plot_multiclass_pr_curve(
     class_names: List[str],
     output_path: Optional[str] = None,
     dpi: int = 300,
-) -> None:
+    figsize=(10, 8),
+) -> Dict[int, float]:
     """
     Plot Precision-Recall curves for binary or multi-class problems.
     Essential for imbalanced datasets where ROC can be misleading.
@@ -155,7 +160,7 @@ def plot_multiclass_pr_curve(
     recall: Dict[int, np.ndarray] = {}
     average_precision: Dict[int, float] = {}
 
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=figsize)
 
     # Use consistent colors with your ROC plot
     colors = sns.color_palette("husl", n_classes)
@@ -185,7 +190,11 @@ def plot_multiclass_pr_curve(
 
     if output_path:
         plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    else:
+        plt.show()
     plt.close()
+
+    return average_precision
 
 
 def plot_cv_roc(

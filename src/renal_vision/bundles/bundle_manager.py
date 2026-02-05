@@ -14,7 +14,7 @@ class ImplementedModels(Enum):
     RADIOMICS = "radiomics"
     MEVIS = "mevis"
     FMCIB = "fmcib"
-    CTFM = "CTFM"
+    CTFM = "ctfm"
 
 
 def load_model_bundle(model_identifier: ImplementedModels) -> ModelBundle:

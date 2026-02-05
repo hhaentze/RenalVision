@@ -134,7 +134,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         help="Path to JSON file containing label mapping (e.g. {'2': 1, '3': 2})",
     )
     parser.add_argument(
-        "--min-volume", type=int, default=100, help="Minimum lesion size in voxels to process."
+        "--min-volume", type=int, default=100, help="Minimum lesion size in mm^3 to process."
     )
 
     # Augmentation

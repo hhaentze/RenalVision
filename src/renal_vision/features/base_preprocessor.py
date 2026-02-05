@@ -98,7 +98,7 @@ class BasePreprocessor(ABC):
         Filter for all components larger than min_volume
 
         Returns:
-        - MetaTensor with all valid components, each with a unique class id>1
+        - MetaTensor with all valid components, each with a unique class id>0
         - List with metadata for each component
         """
 

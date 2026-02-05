@@ -5,12 +5,12 @@ and generates predictions for new images.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from monai.data import MetaTensor
 from monai.transforms import SaveImage
-from scipy import ndimage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
 from renal_vision.features.base_preprocessor import ImageLike
@@ -63,17 +63,17 @@ class LesionPredictor:
 
         # 1. Reconstruct Preprocessor
         prep_config = config["preprocessor"]
-        args = {k: v for k, v in prep_config.items() if k != "name"}
+        kwargs = {k: v for k, v in prep_config.items() if k != "name"}
         if prep_config["name"] == "CTPreprocessor":
-            preprocessor = CTPreprocessor(**args)
+            preprocessor = CTPreprocessor(**kwargs)
         elif prep_config["name"] == "FMCIBPreprocessor":
-            preprocessor = FMCIBPreprocessor(**args)
-        elif prep_config["name"] == "MEVISPreprocessor":
-            preprocessor = MevisPreprocessor(**args)
+            preprocessor = FMCIBPreprocessor(**kwargs)
+        elif prep_config["name"] == "MevisPreprocessor":
+            preprocessor = MevisPreprocessor(**kwargs)
         elif prep_config["name"] == "CTFMPreprocessor":
-            preprocessor = CTFMPreprocessor(**args)
+            preprocessor = CTFMPreprocessor(**kwargs)
         else:
-            raise ValueError(f"Unknown preprocessort type in model config: {prep_config['name']}")
+            raise ValueError(f"Unknown preprocessor type in model config: {prep_config['name']}")
 
         # 2. Instantiate Extractor
         # Filter out keys that aren't arguments to __init__
@@ -84,49 +84,51 @@ class LesionPredictor:
             from renal_vision.features.embeddings_radiomics import RadiomicsExtractor
 
             return RadiomicsExtractor(preprocessor=preprocessor, **ext_kwargs)
-        elif extractor_type == "mevis":
+        elif extractor_type == "MevisEmbeddings":
             from renal_vision.features.embeddings_mevis import MevisExtractor
 
             return MevisExtractor(preprocessor=preprocessor, **ext_kwargs)
-        if extractor_type == "ctfm":
+        elif extractor_type == "CTFM_embeddings":
             from renal_vision.features.embeddings_ctfm import CTFMExtractor
 
             return CTFMExtractor(preprocessor=preprocessor, **ext_kwargs)
-        if extractor_type == "fmcib":
+        elif extractor_type == "fmcib":
             from renal_vision.features.embeddings_fmcib import FMCIBExtractor
 
             return FMCIBExtractor(preprocessor=preprocessor, **ext_kwargs)
+        elif extractor_type == "ImageExtractor":
+            from renal_vision.features.base_extractor import ImageExtractor
+
+            return ImageExtractor(preprocessor=preprocessor, **ext_kwargs)
         else:
             raise ValueError(f"Unknown extractor type in model config: {extractor_type}")
 
-    def _find_components(self, seg: ImageLike) -> Tuple[MetaTensor, int]:
+    def filter_components(
+        self,
+        seg: ImageLike,
+        min_volume: Optional[int] = None,
+        strict: bool = True,
+    ) -> Tuple[MetaTensor, List[Dict[str, Any]]]:
         """
-        Utility method to find connected components in a segmentation mask.
+        Filter for connected components with a minimum target volume. By default min_volume will be loaded from the extractor config
+
+        args:
+        - strict: due to rounding erros the volume of lesions may slightly change before/after transformation (e.g. 403->399).
+                This cause logic errors as a previously filtered and accepted lesion may be rejected in the extraction step.
+                To avoid this, if strict is true, we increase the min_volume used for filtering by 5%
 
         Returns:
-        - a mask where each connected component has a unique integer ID.
-        - number of connected components found
+        - MetaTensor with all valid components, each with a unique class id>0
+        - List with metadata for each component
         """
 
         seg_mask = self.extractor.preprocessor._prepare_data_point(seg)
-        comp_mask = seg_mask * 0  # new empty meta tensor
+        if min_volume is None:
+            min_volume = self.extractor.min_volume
+        if strict:
+            min_volume = int(min_volume * 1.05)
 
-        # Get all unique classes (excluding background 0)
-        classes = np.unique(seg_mask)
-        classes = classes[classes > 0]
-
-        comp_count = 0
-        for class_id in classes:
-            # Create binary mask for this class
-            class_mask = seg == class_id
-
-            # Find connected components
-            labeled_mask, num_comp = ndimage.label(class_mask)
-            for class_comp_id in range(1, num_comp + 1):
-                comp_count += 1
-                comp_mask[labeled_mask == class_comp_id] = comp_count
-
-        return comp_mask, comp_count
+        return self.extractor.preprocessor.filter_components(seg_mask, min_volume)
 
     def infer_lesion(
         self,
@@ -141,7 +143,9 @@ class LesionPredictor:
         """
 
         # 1. Check Number of Lesions
-        _, num_lesions = self._find_components(seg)
+        seg_obj, metadata_list = self.filter_components(seg, min_volume=0)
+        num_lesions = len(metadata_list)
+
         if num_lesions == 0:
             raise ValueError("No lesions found in input segmentation.")
         if num_lesions > 1:
@@ -150,19 +154,29 @@ class LesionPredictor:
                 "For predicting more than one lesion please use infer_mask.",
             )
 
-        # 2. Extract Features
-        lesion_features = self.extractor.extract(image, seg, augment=False)
-        if num_lesions == 0:
+        min_volume = self.extractor.min_volume
+        if metadata_list[0]["volume"] < min_volume:
             raise ValueError(
-                "Extractor could not handle lesion. Volume might be too small.",
-                f"Supported min_volume: {self.extractor.min_volume}",
+                f"Lesion Volume ({metadata_list[0]['volume']}) mm^3 too small.",
+                f"Supported min_volume: {min_volume} mm^3.",
             )
-        if num_lesions > 1:
-            raise Exception("This should never happen.")
 
+        # 2. Extract Features
+        lesion_features = self.extractor.extract(image, seg_obj, augment=False)
+        if len(lesion_features) == 0:
+            if metadata_list[0]["volume"] * 0.9 < min_volume:
+                raise ValueError(
+                    f"Lesion Volume ({metadata_list[0]['volume']}) mm^3 too close to threshold.",
+                    "(Transformation may change calculated volume by around 5%)"
+                    f"Supported min_volume: {min_volume} mm^3.",
+                )
+            else:
+                raise Exception("This should never happen.")
+        if len(lesion_features) > 1:
+            raise Exception("This should never happen.")
         target_lesion = lesion_features[0]
 
-        # 2. Prepare Feature Vector
+        # 3. Prepare Feature Vector
         # Extract columns in the exact order the model expects
         try:
             X = np.array([target_lesion[f] for f in self.bundle.feature_names])
@@ -170,7 +184,7 @@ class LesionPredictor:
         except KeyError as e:
             raise KeyError(f"Feature extraction mismatch. Missing feature: {e}")
 
-        # 3. Predict
+        # 4. Predict
         pred_proba = predict_proba(self.bundle, X)
         pred_class = int(np.argmax(pred_proba))
         class_name = self.bundle.class_names.get(pred_class, f"Class {pred_class}")
@@ -179,8 +193,8 @@ class LesionPredictor:
             "class_id": pred_class,
             "class_name": class_name,
             "confidence": float(np.max(pred_proba)),
-            "probability": pred_proba.tolist(),
-            "volume_voxels": target_lesion.get("volume_voxels"),
+            "probability": pred_proba.squeeze().tolist(),
+            "volume": target_lesion["volume"],
         }
 
     def infer_mask(
@@ -201,19 +215,32 @@ class LesionPredictor:
         Returns:
             np.ndarray: The predicted segmentation mask (same shape as input).
         """
-        # 1. Load/Cast segmentation of to be classified target lesions
-        seg_obj = self.extractor.preprocessor._prepare_data_point(seg)
 
-        # 2. separate connected components in source mask and asign unique ids
-        # (we need those for step 4)
-        labeled_mask, num_comp = self._find_components(seg_obj)
-        print(f"Extracting features for {num_comp} lesions")
+        # 1. Filter for lesions, assign unique ids
+        seg_obj, metadata_list = self.filter_components(seg, min_volume=0)
+
+        # 2. Check volume
+        min_volume = self.extractor.min_volume
+        num_comp = len(metadata_list)
+        n_valid = sum([meta["volume"] >= min_volume for meta in metadata_list])
+        print(f"Found {num_comp} lesions")
+        if n_valid < num_comp:
+            print(
+                f"Warning: {num_comp - n_valid} lesions are smaller than the minimal required volume of {min_volume} mm^3. They will be ignored"
+            )
+        if n_valid == 0:
+            print(
+                print(
+                    f"Warning: All detected lesions are smaller than the minimal required volume of {min_volume} mm^3. Returned empty mask."
+                )
+            )
+            return MetaTensor(torch.zeros_like(seg_obj), meta=seg_obj.meta.copy())
 
         # 3. extract features
-        lesion_features = self.extractor.extract(image, labeled_mask, augment=False)
+        lesion_features = self.extractor.extract(image, seg_obj, augment=False)
 
         # 4. predict and map predicitons to output mask
-        prediction_mask = seg_obj * 0  # new empty meta tensor
+        prediction_mask = MetaTensor(torch.zeros_like(seg_obj), meta=seg_obj.meta.copy())
 
         for features in lesion_features:
             # Extract columns in the exact order the model expects
@@ -227,7 +254,7 @@ class LesionPredictor:
             # the lesion ids that we created in (2) are now stored in features["class_id"]
             # attention: indexing of features and prediction start at 0, not 1
             if features["class_id"] in range(0, num_comp):
-                prediction_mask[labeled_mask == features["class_id"] + 1] = (
+                prediction_mask[seg_obj == features["class_id"] + 1] = (
                     prediction + 1
                 )  # +1 to avoid 0 background
             else:

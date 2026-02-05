@@ -21,6 +21,7 @@ class MevisExtractor(BaseFeatureExtractor):
     def __init__(
         self,
         preprocessor: Optional[BasePreprocessor] = None,
+        feature_names: Optional[List[str]] = None,
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
@@ -28,8 +29,12 @@ class MevisExtractor(BaseFeatureExtractor):
 
         super().__init__(preprocessor, min_volume)
 
-        self._active_features = [f"F{f}_max" for f in range(512)]
-        self._active_features += [f"F{f}_mean" for f in range(512)]
+        if feature_names is None:
+            self._active_features = [f"F{f}_max" for f in range(512)]
+            self._active_features += [f"F{f}_mean" for f in range(512)]
+        else:
+            self._active_features = feature_names
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = NativeBlocks(MMM_MODELS[DEFAULT_MODEL], device_identifier=device)
 

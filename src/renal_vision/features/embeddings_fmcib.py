@@ -208,6 +208,7 @@ class FMCIBExtractor(BaseFeatureExtractor):
     def __init__(
         self,
         preprocessor: Optional[BasePreprocessor] = None,
+        feature_names: Optional[List[str]] = None,
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
@@ -215,7 +216,11 @@ class FMCIBExtractor(BaseFeatureExtractor):
 
         super().__init__(preprocessor, min_volume)
 
-        self._active_features = [f"F{f}" for f in range(4096)]
+        if feature_names is None:
+            self._active_features = [f"F{f}" for f in range(4096)]
+        else:
+            self._active_features = feature_names
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = fmcib_model().to(device)
 

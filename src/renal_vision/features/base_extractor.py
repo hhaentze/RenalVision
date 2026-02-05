@@ -51,7 +51,7 @@ class BaseFeatureExtractor(ABC):
             feats = self._extract_single_lesion(img_comp, seg_comp)
             feats["lesion_id"] = lesion_id
             feats["class_id"] = meta["class_id"] - 1
-            feats["volume_voxels"] = meta["volume"]
+            feats["volume"] = meta["volume"]
             feats["augmented"] = augment
             feats["aug_id"] = 0
             results.append(feats)
@@ -83,7 +83,7 @@ class BaseFeatureExtractor(ABC):
                 feats = self._extract_single_lesion(img_comp, seg_comp)
                 feats["lesion_id"] = lesion_id
                 feats["class_id"] = meta["class_id"] - 1
-                feats["volume_voxels"] = meta["volume"]
+                feats["volume"] = meta["volume"]
                 feats["augmented"] = is_augmented
                 feats["aug_id"] = augmentation_id
                 results.append(feats)
@@ -135,6 +135,34 @@ class ZeroExtractor(BaseFeatureExtractor):
     def get_config(self) -> Dict[str, Any]:
         return {
             "type": "ZeroExtractor",
+            "min_volume": self.min_volume,
+            "preprocessor": self.preprocessor.get_config(),
+        }
+
+
+class ImageExtractor(BaseFeatureExtractor):
+    """Return processed image without extracting features"""
+
+    def __init__(
+        self,
+        preprocessor: BasePreprocessor,
+        min_volume: int,
+    ) -> None:
+        super().__init__(preprocessor, min_volume)
+
+    def _extract_single_lesion(
+        self, image: np.ndarray, lesion_mask: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        """Return Empty Dict"""
+        return {"image": image}
+
+    @property
+    def feature_names(self) -> List[str]:
+        return ["image"]
+
+    def get_config(self) -> Dict[str, Any]:
+        return {
+            "type": "ImageExtractor",
             "min_volume": self.min_volume,
             "preprocessor": self.preprocessor.get_config(),
         }

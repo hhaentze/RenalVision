@@ -46,5 +46,5 @@ class TestEndToEndInference:
         assert "class_name" in result
         assert "confidence" in result
         assert "probability" in result
-        assert "volume_voxels" in result
+        assert "volume" in result
         assert isinstance(result["class_id"], (int, np.integer))

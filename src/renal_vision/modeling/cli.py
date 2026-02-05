@@ -46,7 +46,7 @@ def run_infer(args: argparse.Namespace) -> None:
             print("-" * 30)
             print(f" Class:      {result['class_name']} (ID: {result['class_id']})")
             print(f" Confidence: {result['confidence']:.2%}")
-            print(f" Volume:     {result['volume_voxels']} voxels")
+            print(f" Volume:     {result['volume']} mm^3")
             print("-" * 30)
         except ValueError as e:
             print(f"Error: {e}")

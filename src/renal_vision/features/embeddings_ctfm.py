@@ -18,6 +18,7 @@ class CTFMExtractor(BaseFeatureExtractor):
     def __init__(
         self,
         preprocessor: Optional[BasePreprocessor] = None,
+        feature_names: Optional[List[str]] = None,
         min_volume: int = 400,
     ) -> None:
         if preprocessor is None:
@@ -25,7 +26,11 @@ class CTFMExtractor(BaseFeatureExtractor):
 
         super().__init__(preprocessor, min_volume)
 
-        self._active_features = [f"F{f}" for f in range(512)]
+        if feature_names is None:
+            self._active_features = [f"F{f}" for f in range(512)]
+        else:
+            self._active_features = feature_names
+
         self.model = SegResEncoder.from_pretrained(
             "project-lighter/ct_fm_feature_extractor", local_files_only=True
         )

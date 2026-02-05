@@ -48,7 +48,7 @@ rv extract \
     --output ./data/features/train_features.parquet \
     --extractor radiomics \
     --label-map label-map.json \
-    --min-voxels 10 \ # exclude lesions smaller than 10 volume voxels (default)
+    --min-volume 400 \ # exclude lesions smaller than 400 mm^3 (default)
     --augment 5 # generate 5 (additional) synthetic variations for every lesion
 ```
 ### Output Format
