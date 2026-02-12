@@ -1,12 +1,11 @@
-"""
-Common evaluation metrics and plotting utilities.
-"""
-
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import asdict, dataclass
+from typing import Any, List, Literal, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
+from scipy import stats
 from sklearn.metrics import (
     accuracy_score,
     auc,
@@ -18,329 +17,453 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.preprocessing import label_binarize
+from sklearn.utils import resample
+
+# --- Data Structures ---
 
 
-def compute_metrics(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    y_proba: Optional[np.ndarray] = None,
-    class_names: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """
-    Compute classification metrics dynamically for binary or multi-class.
-    """
-    cm = confusion_matrix(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred, average="weighted", zero_division=0)
-    accuracy = accuracy_score(y_true, y_pred)
+@dataclass
+class MetricStats:
+    """Holds the statistical result of a metric analysis."""
 
-    metrics: Dict[str, Any] = {
-        "accuracy": float(accuracy),
-        "f1": float(f1),
-        "confusion_matrix": cm,
-    }
+    metric_name: str
+    method: str  # 'bootstrap', 't-test'
+    mean: float
+    lower_ci: float
+    upper_ci: float
+    std_dev: float  # Useful for T-tests
+    n_samples: int  # Number of rounds (bootstrap) or folds (t-test)
 
-    # Binary-specific metrics (Sensitivity/Specificity)
-    if cm.shape == (2, 2):
-        tn, fp, fn, tp = cm.ravel()
-        metrics["sensitivity"] = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
-        metrics["specificity"] = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
-
-    # Classification Report
-    metrics["report_dict"] = classification_report(
-        y_true, y_pred, target_names=class_names, output_dict=True, zero_division=0
-    )
-    metrics["report_str"] = classification_report(
-        y_true, y_pred, target_names=class_names, zero_division=0
-    )
-
-    return metrics
-
-
-def plot_confusion_matrix(
-    cm: np.ndarray,
-    class_names: List[str],
-    output_path: Optional[str] = None,
-    title: str = "Confusion Matrix",
-    dpi: int = 300,
-) -> None:
-    """Plot confusion matrix using Seaborn."""
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
-        cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names
-    )
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
-    plt.title(title)
-
-    if output_path:
-        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    plt.close()
-
-
-def plot_multiclass_roc(
-    y_true: np.ndarray,
-    y_proba: np.ndarray,
-    n_classes: int,
-    class_names: List[str],
-    output_path: Optional[str] = None,
-    dpi: int = 300,
-    figsize=(10, 8),
-) -> Dict[Union[int, str], float]:
-    """
-    Plot ROC curves for binary (N=2) or multi-class (N>2) problems.
-    Includes Micro/Macro averages.
-    """
-    # Binarize labels for multi-class ROC
-    y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
-
-    # Fix for binary case where label_binarize returns 1 column
-    if n_classes == 2 and y_true_bin.shape[1] == 1:
-        y_true_bin = np.hstack((1 - y_true_bin, y_true_bin))
-
-    fpr: Dict[Union[int, str], Any] = {}
-    tpr: Dict[Union[int, str], Any] = {}
-    roc_auc: Dict[Union[int, str], float] = {}
-
-    plt.figure(figsize=figsize)
-
-    # Calculate ROC for each class
-    for i in range(n_classes):
-        fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_proba[:, i])
-        roc_auc[i] = auc(fpr[i], tpr[i])
-
-    # Plotting logic...
-    if n_classes == 2:
-        # Binary: Plot positive class only
-        label = class_names[1] if len(class_names) > 1 else "Positive"
-        plt.plot(fpr[1], tpr[1], lw=2, label=f"ROC ({label} AUC = {roc_auc[1]:.2f})")
-    else:
-        # Multi-class: Plot Micro/Macro + Per Class
-        # ... (Micro/Macro logic from original utils.py) ...
-        # Loop classes
-        colors = sns.color_palette("husl", n_classes)
-        for i, color in zip(range(n_classes), colors):
-            name = class_names[i] if i < len(class_names) else f"Class {i}"
-            plt.plot(fpr[i], tpr[i], color=color, lw=2, label=f"{name} (AUC = {roc_auc[i]:.2f})")
-
-    plt.plot([0, 1], [0, 1], "k--", lw=2)
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve (One-vs-Rest)")
-    plt.legend(loc="lower right")
-
-    if output_path:
-        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    else:
-        plt.show()
-    plt.close()
-    return roc_auc
-
-
-def plot_multiclass_pr_curve(
-    y_true: np.ndarray,
-    y_proba: np.ndarray,
-    n_classes: int,
-    class_names: List[str],
-    output_path: Optional[str] = None,
-    dpi: int = 300,
-    figsize=(10, 8),
-) -> Dict[int, float]:
-    """
-    Plot Precision-Recall curves for binary or multi-class problems.
-    Essential for imbalanced datasets where ROC can be misleading.
-    """
-    # Binarize labels for One-vs-Rest calculation
-    y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
-
-    # Fix for binary case where label_binarize returns 1 column
-    if n_classes == 2 and y_true_bin.shape[1] == 1:
-        y_true_bin = np.hstack((1 - y_true_bin, y_true_bin))
-
-    precision: Dict[int, np.ndarray] = {}
-    recall: Dict[int, np.ndarray] = {}
-    average_precision: Dict[int, float] = {}
-
-    plt.figure(figsize=figsize)
-
-    # Use consistent colors with your ROC plot
-    colors = sns.color_palette("husl", n_classes)
-
-    for i in range(n_classes):
-        precision[i], recall[i], _ = precision_recall_curve(y_true_bin[:, i], y_proba[:, i])
-        average_precision[i] = average_precision_score(y_true_bin[:, i], y_proba[:, i])
-
-        # Determine class name
-        name = class_names[i] if class_names and i < len(class_names) else f"Class {i}"
-
-        # Plot curve
-        plt.plot(
-            recall[i],
-            precision[i],
-            color=colors[i],
-            lw=2,
-            label=f"{name} (AP = {average_precision[i]:.2f})",
+    def __str__(self):
+        return (
+            f"[{self.method.upper()}] {self.metric_name}: {self.mean:.3f} "
+            f"(95% CI: {self.lower_ci:.3f} - {self.upper_ci:.3f})"
         )
 
-    # Plot formatting
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title("Precision-Recall Curve (One-vs-Rest)")
-    plt.legend(loc="upper right")
-    plt.grid(True, linestyle="--", alpha=0.6)
 
-    if output_path:
-        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    else:
-        plt.show()
-    plt.close()
+@dataclass
+class ScalarMetrics:
+    """Holds standard scalar classification metrics."""
 
-    return average_precision
+    accuracy: float
+    f1_macro: float
+    sensitivity: Optional[float] = None
+    specificity: Optional[float] = None
+    report: Optional[pd.DataFrame] = None
+
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
-def plot_cv_roc(
-    y_true_list: List[np.ndarray],
-    y_proba_list: List[np.ndarray],
-    n_classes: int,
-    class_names: List[str],
-    output_path: Optional[str] = None,
-    dpi: int = 300,
-) -> None:
+# --- Base Class ---
+
+
+class _BaseEvaluator:
     """
-    Plot Cross-Validated ROC curves with mean and variance (std dev).
-    Requires a list of y_true and y_proba arrays (one per fold).
+    Shared core logic for all evaluators.
+    Handles: Shape fixing, Binarization, and Metric Calculation.
     """
-    # Common x-axis for interpolation
-    mean_fpr = np.linspace(0, 1, 100)
 
-    plt.figure(figsize=(10, 8))
-    colors = sns.color_palette("husl", n_classes)
+    def __init__(self, n_classes: int, class_names: Optional[List[str]] = None):
+        self.n_classes = n_classes
+        self.class_names = class_names if class_names else [f"Class {i}" for i in range(n_classes)]
+        self.colors = sns.color_palette("husl", n_classes)
 
-    # Determine which classes to plot
-    # If binary, we usually only plot the positive class (index 1)
-    classes_to_plot = [1] if n_classes == 2 else range(n_classes)
+    def _ensure_matrix(self, y_proba: Any) -> np.ndarray:
+        """Fixes the 'array of lists' issue common with Pandas."""
+        if isinstance(y_proba, (pd.Series, list)) or (
+            isinstance(y_proba, np.ndarray) and y_proba.ndim == 1
+        ):
+            try:
+                return np.vstack(list(y_proba)).astype(float)
+            except ValueError as e:
+                raise ValueError(
+                    "Could not stack probability lists. Ensure all rows have equal length."
+                ) from e
+        return np.array(y_proba)
 
-    for i in classes_to_plot:
-        tprs = []
-        aucs = []
+    def _binarize(self, y: np.ndarray) -> np.ndarray:
+        """Robust label binarization."""
+        y_bin = label_binarize(y, classes=np.arange(self.n_classes))
+        if self.n_classes == 2 and y_bin.shape[1] == 1:
+            y_bin = np.hstack((1 - y_bin, y_bin))
+        return y_bin
 
-        # Loop through each fold
-        for y_true, y_proba in zip(y_true_list, y_proba_list):
-            # Binarize labels for this fold
-            y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
+    def _get_label(self, i: int) -> str:
+        return self.class_names[i] if i < len(self.class_names) else f"Class {i}"
 
-            # Fix for binary case (label_binarize returns 1 column for 2 classes)
-            if n_classes == 2 and y_true_bin.shape[1] == 1:
-                y_true_bin = np.hstack((1 - y_true_bin, y_true_bin))
+    def _calc_score(
+        self, y_true_bin: np.ndarray, y_proba: np.ndarray, metric: str, indices: List[int]
+    ) -> float:
+        """
+        The mathematical core. Calculates the MEAN score for a subset of classes.
+        """
+        class_scores = []
+        for i in indices:
+            if metric == "auc":
+                fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_proba[:, i])
+                class_scores.append(auc(fpr, tpr))
+            elif metric == "ap":
+                class_scores.append(average_precision_score(y_true_bin[:, i], y_proba[:, i]))
+        return float(np.mean(class_scores))
 
-            # Calculate ROC for this fold & class
-            fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_proba[:, i])
+    def _describe_dataset(self, y_true: np.ndarray, title: str = "Dataset Summary"):
+        print(f"\n--- {title} ---")
+        total = len(y_true)
+        unique, counts = np.unique(y_true, return_counts=True)
+        stats_dict = dict(zip(unique, counts))
 
-            # Interpolate TPR to map onto the common mean_fpr
-            interp_tpr = np.interp(mean_fpr, fpr, tpr)
-            interp_tpr[0] = 0.0  # Force start at 0
-            tprs.append(interp_tpr)
-            aucs.append(auc(fpr, tpr))
-
-        # Calculate Means and Standard Deviations
-        mean_tpr = np.mean(tprs, axis=0)
-        mean_tpr[-1] = 1.0  # Force end at 1
-        std_tpr = np.std(tprs, axis=0)
-        mean_auc = auc(mean_fpr, mean_tpr)
-        std_auc = np.std(aucs)
-
-        # Labeling
-        name = class_names[i] if i < len(class_names) else f"Class {i}"
-        label = f"{name} (AUC = {mean_auc:.2f} $\pm$ {std_auc:.2f})"
-        color = colors[i]
-
-        # Plot Mean Curve
-        plt.plot(mean_fpr, mean_tpr, color=color, lw=2, alpha=0.8, label=label)
-
-        # Plot Variance (Shaded Area)
-        tpr_upper = np.minimum(mean_tpr + std_tpr, 1)
-        tpr_lower = np.maximum(mean_tpr - std_tpr, 0)
-        plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color=color, alpha=0.2)
-
-    plt.plot([0, 1], [0, 1], "k--", lw=2, alpha=0.8)
-    plt.xlim([-0.05, 1.05])
-    plt.ylim([-0.05, 1.05])
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("Cross-Validated ROC Curve")
-    plt.legend(loc="lower right")
-
-    if output_path:
-        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    plt.close()
+        for i in range(self.n_classes):
+            count = stats_dict.get(i, 0)
+            pct = (count / total) * 100
+            print(f"  - {self._get_label(i)}: {count} ({pct:.1f}%)")
+        print("---------------------\n")
 
 
-def plot_cv_pr_curve(
-    y_true_list: List[np.ndarray],
-    y_proba_list: List[np.ndarray],
-    n_classes: int,
-    class_names: List[str],
-    output_path: Optional[str] = None,
-    dpi: int = 300,
-) -> None:
+# --- Track A: Single Model Evaluator ---
+
+
+class ModelEvaluator(_BaseEvaluator):
     """
-    Plot Cross-Validated Precision-Recall curves with mean and variance.
+    Evaluator for a single test set.
     """
-    # Common x-axis (Recall) for interpolation
-    mean_recall = np.linspace(0, 1, 100)
 
-    plt.figure(figsize=(10, 8))
-    colors = sns.color_palette("husl", n_classes)
+    def __init__(
+        self,
+        y_true: Union[np.ndarray, List],
+        y_proba: Union[np.ndarray, List],
+        class_names: Optional[List[str]] = None,
+        verbose: bool = True,
+    ):
+        # Fix Shapes
+        self.y_true = np.array(y_true)
+        y_proba_mat = self._ensure_matrix(y_proba)
 
-    classes_to_plot = [1] if n_classes == 2 else range(n_classes)
+        super().__init__(y_proba_mat.shape[1], class_names)
 
-    for i in classes_to_plot:
-        precisions = []
-        aps = []  # Average Precision Scores
+        self.y_proba = y_proba_mat
+        self.y_true_bin = self._binarize(self.y_true)
+        self.y_pred = np.argmax(self.y_proba, axis=1)
 
-        for y_true, y_proba in zip(y_true_list, y_proba_list):
-            # Binarize
-            y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
-            if n_classes == 2 and y_true_bin.shape[1] == 1:
-                y_true_bin = np.hstack((1 - y_true_bin, y_true_bin))
+        if verbose:
+            self._describe_dataset(self.y_true)
 
-            # Calculate P-R curve
-            precision, recall, _ = precision_recall_curve(y_true_bin[:, i], y_proba[:, i])
+    def get_scalars(self) -> ScalarMetrics:
+        """Compute Accuracy, F1, etc."""
+        cm = confusion_matrix(self.y_true, self.y_pred)
+        acc = accuracy_score(self.y_true, self.y_pred)
+        f1 = f1_score(self.y_true, self.y_pred, average="weighted", zero_division=0)
 
-            # Interpolation requires x-values (recall) to be increasing.
-            # precision_recall_curve returns results sorted by threshold (descending recall).
-            # We must flip them for np.interp.
-            reversed_recall = recall[::-1]
-            reversed_precision = precision[::-1]
+        report = pd.DataFrame(
+            classification_report(
+                self.y_true,
+                self.y_pred,
+                target_names=self.class_names,
+                output_dict=True,
+                zero_division=0,
+            )
+        ).transpose()
 
-            interp_precision = np.interp(mean_recall, reversed_recall, reversed_precision)
-            precisions.append(interp_precision)
+        sens, spec = None, None
+        if self.n_classes == 2:
+            tn, fp, fn, tp = cm.ravel()
+            sens = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            spec = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
-            aps.append(average_precision_score(y_true_bin[:, i], y_proba[:, i]))
+        return ScalarMetrics(
+            accuracy=acc, f1_macro=f1, sensitivity=sens, specificity=spec, report=report
+        )
 
-        # Mean and Std
-        mean_precision = np.mean(precisions, axis=0)
-        std_precision = np.std(precisions, axis=0)
-        mean_ap = np.mean(aps)
-        std_ap = np.std(aps)
+    def check_ci_soundness(self, min_samples: int = 15, verbose: bool = True) -> bool:
+        """
+        Checks if minority class has enough sample for reliable CI.
+        """
+        unique, counts = np.unique(self.y_true, return_counts=True)
 
-        # Plotting
-        name = class_names[i] if i < len(class_names) else f"Class {i}"
-        label = f"{name} (AP = {mean_ap:.2f} $\pm$ {std_ap:.2f})"
-        color = colors[i]
+        if len(unique) < 2:
+            print("Warning:  Only one class present in y_true. CI cannot be computed reliably.")
+            return False  # Only 1 class present
 
-        plt.plot(mean_recall, mean_precision, color=color, lw=2, alpha=0.8, label=label)
+        # Get the count of the smallest class
+        min_count = np.min(counts)
+        if min_count < min_samples:
+            print(
+                f"Warning:  Not enough samples for Class '{unique[np.argmin(counts)]}' (N={min_count}).\n",
+                f"          Bootstrapping requires N >= {min_samples} to be reliable.",
+            )
+            return False
 
-        # Shading
-        prec_upper = np.minimum(mean_precision + std_precision, 1)
-        prec_lower = np.maximum(mean_precision - std_precision, 0)
-        plt.fill_between(mean_recall, prec_lower, prec_upper, color=color, alpha=0.2)
+        return True
 
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title("Cross-Validated Precision-Recall Curve")
-    plt.legend(loc="best")
-    plt.grid(True, linestyle="--", alpha=0.6)
+    def bootstrap_metric(
+        self,
+        metric: Literal["auc", "ap"] = "auc",
+        target_classes: Optional[List[int]] = None,
+        n_rounds: int = 1000,
+        seed: int = 42,
+    ) -> MetricStats:
+        """
+        Calculate 95% CI using Bootstrapping.
+        """
+        scores = []
+        indices = target_classes if target_classes else list(range(self.n_classes))
 
-    if output_path:
-        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    plt.close()
+        # 1. Base Score
+        base_score = self._calc_score(self.y_true_bin, self.y_proba, metric, indices)
+        method = "bootstrap" if self.check_ci_soundness() else "bootstrap (unreliable)"
+
+        # 2. Bootstrap Loop
+        n_samples = len(self.y_true)
+        for _ in range(n_rounds):
+            ix = resample(np.arange(n_samples), random_state=seed)
+            score = self._calc_score(self.y_true_bin[ix], self.y_proba[ix], metric, indices)
+            scores.append(score)
+
+        # 3. Percentiles
+        lower = float(np.percentile(scores, 2.5))
+        upper = float(np.percentile(scores, 97.5))
+
+        return MetricStats(
+            metric_name=f"Mean {metric.upper()} (Classes {indices})",
+            method=method,
+            mean=base_score,
+            lower_ci=lower,
+            upper_ci=upper,
+            std_dev=float(np.std(scores)),
+            n_samples=n_rounds,
+        )
+
+    def plot_roc(self, figsize=(8, 6), output_path=None):
+        plt.figure(figsize=figsize)
+        classes_to_plot = [1] if self.n_classes == 2 else range(self.n_classes)
+        for i in classes_to_plot:
+            fpr, tpr, _ = roc_curve(self.y_true_bin[:, i], self.y_proba[:, i])
+            score = auc(fpr, tpr)
+            plt.plot(
+                fpr,
+                tpr,
+                color=self.colors[i],
+                lw=2,
+                label=f"{self._get_label(i)} (AUC = {score:.2f})",
+            )
+        plt.plot([0, 1], [0, 1], "k--", lw=1.5, alpha=0.7)
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve (One-vs-Rest)")
+        plt.legend(loc="lower right")
+        if output_path:
+            plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        else:
+            plt.show()
+        plt.close()
+
+    def plot_pr(self, figsize=(8, 6), output_path=None):
+        plt.figure(figsize=figsize)
+        classes_to_plot = [1] if self.n_classes == 2 else range(self.n_classes)
+        for i in classes_to_plot:
+            p, r, _ = precision_recall_curve(self.y_true_bin[:, i], self.y_proba[:, i])
+            score = average_precision_score(self.y_true_bin[:, i], self.y_proba[:, i])
+            plt.plot(
+                r,
+                p,
+                color=self.colors[i],
+                lw=2,
+                label=f"{self._get_label(i)} (AP = {score:.2f})",
+            )
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.title("Precision-Recall Curve")
+        plt.legend(loc="lower left")
+        plt.grid(True, linestyle="--", alpha=0.5)
+        if output_path:
+            plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        else:
+            plt.show()
+        plt.close()
+
+    def plot_cm(self, figsize=(8, 6), output_path=None):
+        cm = confusion_matrix(self.y_true, self.y_pred)
+        plt.figure(figsize=figsize)
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=self.class_names,
+            yticklabels=self.class_names,
+        )
+        plt.xlabel("Predicted")
+        plt.ylabel("True")
+        plt.title("Confusion Matrix")
+        if output_path:
+            plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        else:
+            plt.show()
+        plt.close()
+
+
+# --- Track B: Cross-Validation Evaluator ---
+
+
+class CrossValidator(_BaseEvaluator):
+    """
+    Evaluator for multiple folds (List of Arrays).
+    """
+
+    def __init__(
+        self,
+        y_true_list: List[Union[np.ndarray, List]],
+        y_proba_list: List[Union[np.ndarray, List]],
+        class_names: Optional[List[str]] = None,
+        verbose: bool = True,
+    ):
+        # Handle lists of lists -> list of arrays
+        self.y_true_list = [np.array(y) for y in y_true_list]
+        self.y_proba_list = [self._ensure_matrix(y) for y in y_proba_list]
+
+        super().__init__(self.y_proba_list[0].shape[1], class_names)
+
+        if verbose:
+            print(f"--- Cross Validation Summary ({len(self.y_true_list)} folds) ---")
+            total_samples = sum(len(y) for y in self.y_true_list)
+            print(f"Total Samples (All Folds): {total_samples}")
+            self._describe_dataset(self.y_true_list[0], title="Fold 1 Summary")
+
+    def get_metric_stats(
+        self,
+        metric: Literal["auc", "ap"] = "auc",
+        method: Literal["fold", "pooled"] = "fold",
+        target_classes: Optional[List[int]] = None,
+        n_rounds: int = 1000,
+    ) -> MetricStats:
+        """
+        Calculate statistics for CV data.
+
+        Args:
+            metric: 'auc' or 'ap'
+            method:
+                'fold': Calculates T-Test based on N folds (Stability).
+                'pooled': Concatenates all data and Bootstraps (Performance).
+            target_classes: specific class indices to average.
+        """
+        indices = target_classes if target_classes else list(range(self.n_classes))
+
+        if method == "fold":
+            # --- Approach A: T-Test across folds ---
+            fold_scores = []
+            for y_true, y_proba in zip(self.y_true_list, self.y_proba_list):
+                y_bin = self._binarize(y_true)
+                score = self._calc_score(y_bin, y_proba, metric, indices)
+                fold_scores.append(score)
+
+            mean_score = np.mean(fold_scores)
+            std_score = np.std(fold_scores, ddof=1)  # Sample std
+            n = len(fold_scores)
+
+            # T-Interval
+            # alpha=0.95, df=n-1, loc=mean, scale=SEM
+            sem = std_score / np.sqrt(n)
+            lower, upper = stats.t.interval(0.95, df=n - 1, loc=mean_score, scale=sem)
+
+            return MetricStats(
+                metric_name=f"Mean {metric.upper()} (Classes {indices})",
+                method="t-test (fold-wise)",
+                mean=float(mean_score),
+                lower_ci=lower,
+                upper_ci=upper,
+                std_dev=float(std_score),
+                n_samples=n,
+            )
+
+        elif method == "pooled":
+            # --- Approach B: Bootstrap the concatenated arrays ---
+            # 1. Concatenate
+            y_true_all = np.concatenate(self.y_true_list)
+            y_proba_all = np.vstack(self.y_proba_list)
+
+            # 2. Delegate to ModelEvaluator logic
+            # We create a temporary ModelEvaluator to run the bootstrap
+            temp_eval = ModelEvaluator(y_true_all, y_proba_all, self.class_names, verbose=False)
+            stats_obj = temp_eval.bootstrap_metric(
+                metric, target_classes=indices, n_rounds=n_rounds
+            )
+            stats_obj.method = "bootstrap (pooled)"  # Update label
+            return stats_obj
+
+    def _get_interpolated_curve(self, class_idx, x_grid, curve_type="roc"):
+        ys_interp = []
+        scores = []
+
+        for y_true, y_proba in zip(self.y_true_list, self.y_proba_list):
+            y_bin = self._binarize(y_true)
+
+            if curve_type == "roc":
+                fpr, tpr, _ = roc_curve(y_bin[:, class_idx], y_proba[:, class_idx])
+                interp_val = np.interp(x_grid, fpr, tpr)
+                interp_val[0] = 0.0
+                ys_interp.append(interp_val)
+                scores.append(auc(fpr, tpr))
+
+            elif curve_type == "pr":
+                p, r, _ = precision_recall_curve(y_bin[:, class_idx], y_proba[:, class_idx])
+                interp_val = np.interp(x_grid, r[::-1], p[::-1])
+                ys_interp.append(interp_val)
+                scores.append(average_precision_score(y_bin[:, class_idx], y_proba[:, class_idx]))
+
+        mean_y = np.mean(ys_interp, axis=0)
+        std_y = np.std(ys_interp, axis=0)
+
+        if curve_type == "roc":
+            mean_y[-1] = 1.0
+
+        return mean_y, std_y, np.mean(scores), np.std(scores)
+
+    def plot_aggregated_roc(self, figsize=(10, 8), output_path=None):
+        plt.figure(figsize=figsize)
+        mean_fpr = np.linspace(0, 1, 100)
+        indices = [1] if self.n_classes == 2 else range(self.n_classes)
+
+        for i in indices:
+            mean_tpr, std_tpr, mean_auc, std_auc = self._get_interpolated_curve(i, mean_fpr, "roc")
+            label = f"{self._get_label(i)} (AUC = {mean_auc:.2f} $\pm$ {std_auc:.2f})"
+            plt.plot(mean_fpr, mean_tpr, color=self.colors[i], lw=2, label=label)
+
+            tpr_upper = np.minimum(mean_tpr + std_tpr, 1)
+            tpr_lower = np.maximum(mean_tpr - std_tpr, 0)
+            plt.fill_between(mean_fpr, tpr_lower, tpr_upper, color=self.colors[i], alpha=0.15)
+
+        plt.plot([0, 1], [0, 1], "k--", lw=1.5, alpha=0.7)
+        plt.title("Cross-Validated ROC (Mean $\pm$ Std)")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.legend(loc="lower right")
+        if output_path:
+            plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        else:
+            plt.show()
+        plt.close()
+
+    def plot_aggregated_pr(self, figsize=(10, 8), output_path=None):
+        plt.figure(figsize=figsize)
+        mean_recall = np.linspace(0, 1, 100)
+        indices = [1] if self.n_classes == 2 else range(self.n_classes)
+
+        for i in indices:
+            mean_p, std_p, mean_ap, std_ap = self._get_interpolated_curve(i, mean_recall, "pr")
+            label = f"{self._get_label(i)} (AP = {mean_ap:.2f} $\pm$ {std_ap:.2f})"
+            plt.plot(mean_recall, mean_p, color=self.colors[i], lw=2, label=label)
+
+            p_upper = np.minimum(mean_p + std_p, 1)
+            p_lower = np.maximum(mean_p - std_p, 0)
+            plt.fill_between(mean_recall, p_lower, p_upper, color=self.colors[i], alpha=0.15)
+
+        plt.title("Cross-Validated Precision-Recall (Mean $\pm$ Std)")
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.legend(loc="best")
+        plt.grid(True, linestyle="--", alpha=0.5)
+        if output_path:
+            plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        else:
+            plt.show()
+        plt.close()
