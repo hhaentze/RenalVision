@@ -153,20 +153,21 @@ class LesionPredictor:
                 f"Found {num_lesions} different lesions.",
                 "For predicting more than one lesion please use infer_mask.",
             )
+        metadata = metadata_list[0]
 
         min_volume = self.extractor.min_volume
-        if metadata_list[0]["volume"] < min_volume:
+        if metadata["volume"] < min_volume:
             raise ValueError(
-                f"Lesion Volume ({metadata_list[0]['volume']}) mm^3 too small.",
+                f"Lesion Volume ({metadata['volume']}) mm^3 too small.",
                 f"Supported min_volume: {min_volume} mm^3.",
             )
 
         # 2. Extract Features
         lesion_features = self.extractor.extract(image, seg_obj, augment=False)
         if len(lesion_features) == 0:
-            if metadata_list[0]["volume"] * 0.9 < min_volume:
+            if metadata["volume"] * 0.8 < min_volume:
                 raise ValueError(
-                    f"Lesion Volume ({metadata_list[0]['volume']}) mm^3 too close to threshold.",
+                    f"Lesion Volume ({metadata['volume']}) mm^3 too close to threshold.",
                     "(Transformation may change calculated volume by around 5%)"
                     f"Supported min_volume: {min_volume} mm^3.",
                 )

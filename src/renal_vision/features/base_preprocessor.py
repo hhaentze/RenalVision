@@ -9,7 +9,6 @@ from typing import Any, Dict, Generator, List, Tuple, Union, cast
 import numpy as np
 import torch
 from monai.data import MetaTensor
-from monai.data.utils import affine_to_spacing
 from monai.transforms import (
     Compose,
     LoadImage,
@@ -107,8 +106,8 @@ class BasePreprocessor(ABC):
         classes = classes[classes > 0]
 
         # calculate voxel_volume
-        spacing = affine_to_spacing(seg.meta["affine"], r=3)
-        voxel_volume = float(torch.prod(torch.as_tensor(spacing)))
+        affine = seg.meta["affine"]
+        voxel_volume = torch.abs(torch.linalg.det(affine[:3, :3]))
 
         # define output variables
         component_mask = MetaTensor(torch.zeros_like(seg), meta=seg.meta.copy())
