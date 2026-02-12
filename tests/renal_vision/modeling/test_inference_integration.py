@@ -26,11 +26,13 @@ class TestEndToEndInference:
         img, seg = mock_two_lesions
 
         # Act
-        output_mask = real_predictor.infer_mask(img, seg)
+        output_mask, results = real_predictor.infer_mask(img, seg)
 
         # Assert
         assert isinstance(output_mask, MetaTensor)
         assert output_mask.shape == seg.shape
+        assert isinstance(results, list)
+        assert len(results) == 2  # We created 2 lesions, so we expect 2 results
         # Ensure it didn't just return NaNs
         assert not output_mask.isnan().any()
 
