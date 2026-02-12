@@ -10,14 +10,8 @@ from typing import Any, Dict
 import numpy as np
 
 from renal_vision.features.dataset import FeatureDatasetProcessor
-from renal_vision.shared.metrics import (
-    compute_metrics,
-    plot_confusion_matrix,
-    plot_multiclass_pr_curve,
-    plot_multiclass_roc,
-)
-
-from .models import ModelBundle, predict_proba
+from renal_vision.modeling.models import ModelBundle, predict_proba
+from renal_vision.shared.metrics import ModelEvaluator
 
 
 def run_evaluation(
@@ -75,18 +69,17 @@ def run_evaluation(
     sorted_class_indices = sorted(model_bundle.class_names.keys())
     class_names_list = [model_bundle.class_names[i] for i in sorted_class_indices]
 
-    metrics = compute_metrics(
-        y_true=y_true, y_pred=y_pred, y_proba=y_proba, class_names=class_names_list
-    )
+    evaluator = ModelEvaluator(y_true, y_proba, class_names=class_names_list)
 
+    metrics = evaluator.get_scalars().as_dict()
     # 5. Print & Save Report
     if verbose:
         print("\n" + "=" * 40)
         print(f"Accuracy: {metrics['accuracy']:.4f}")
-        print(f"F1 Score: {metrics['f1']:.4f}")
+        print(f"F1 Score: {metrics['f1_macro']:.4f}")
         print("=" * 40)
         print("Classification Report:")
-        print(metrics["report_str"])
+        print(metrics["report"])
 
         # Save raw metrics
         # Convert numpy types to native python for JSON serialization
@@ -103,36 +96,15 @@ def run_evaluation(
             json.dump(metrics, f, default=convert_numpy, indent=4)
 
         # 6. Generate Plots
-        # Confusion Matrix
-        if "confusion_matrix" in metrics:
-            plot_confusion_matrix(
-                cm=np.array(metrics["confusion_matrix"]),
-                class_names=class_names_list,
-                output_path=str(output_path / "confusion_matrix.png"),
-            )
-
-        # ROC Curves
-        # Note: plot_multiclass_roc handles both binary and multi-class logic
-        plot_multiclass_roc(
-            y_true=y_true,
-            y_proba=y_proba,
-            n_classes=model_bundle.n_classes,
-            class_names=class_names_list,
-            output_path=str(output_path / "roc_curves.png"),
-        )
-        # PR Curves
-        plot_multiclass_pr_curve(
-            y_true=y_true,
-            y_proba=y_proba,
-            n_classes=model_bundle.n_classes,
-            class_names=class_names_list,
-            output_path=str(output_path / "pr_curves.png"),
-        )
+        evaluator.plot_cm(output_path / "confusion_matrix.png")
+        evaluator.plot_roc(output_path / "roc_curves.png")
+        evaluator.plot_pr(output_path / "pr_curves.png")
         print(f"Results saved to {output_dir}")
 
     if return_preds:
         pred_df = df.drop(model_bundle.feature_names, axis=1)
         pred_df["y_true"] = y_true
+        pred_df["y_proba"] = list(y_proba)
         for cl in range(len(class_names_list)):
             pred_df[f"y_{cl}_proba"] = [p[cl] for p in y_proba]
         pred_df["y_pred"] = y_pred
