@@ -50,6 +50,8 @@ def run_train(args: argparse.Namespace) -> None:
         cache_rate=args.cache_rate,
         no_image_caching=args.no_image_caching,
         validate=args.validate,
+        n_folds=args.n_folds,
+        validation_fold=args.validation_fold,
     )
 
 
@@ -77,6 +79,15 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         type=str,
         required=True,
         help="Path to save output weights",
+    )
+    parser.add_argument(
+        "--n_folds",
+        type=int,
+        default=10,
+        help="How many folds should be calculated for validation?",
+    )
+    parser.add_argument(
+        "--validation_fold", type=int, default=0, help="Which fold should be used for validation?"
     )
 
     # Flags

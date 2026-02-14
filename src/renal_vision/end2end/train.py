@@ -53,6 +53,7 @@ class LesionClassifier(pl.LightningModule):
         self.loss_fn = nn.CrossEntropyLoss(weight=class_weights)
         self.num_classes = num_classes
         self.max_epochs = max_epochs
+        self.use_pretrained = use_pretrained
 
         # Metrics that accumulate across batches
         self.train_auroc = MulticlassAUROC(num_classes=num_classes, average=None)
@@ -77,9 +78,15 @@ class LesionClassifier(pl.LightningModule):
         self.train_auroc.update(probs, labels)
         self.train_ap.update(probs, labels)
 
-        # Log learning rate
-        current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
-        self.log("train/lr", current_lr, on_step=True, on_epoch=False, prog_bar=True)
+        # Log learning rate(s)
+        if self.use_pretrained:
+            trunk_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+            head_lr = self.trainer.optimizers[0].param_groups[1]["lr"]
+            self.log("train/lr_trunk", trunk_lr, on_step=True, on_epoch=False, prog_bar=True)
+            self.log("train/lr_head", head_lr, on_step=True, on_epoch=False, prog_bar=False)
+        else:
+            current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+            self.log("train/lr", current_lr, on_step=True, on_epoch=False, prog_bar=True)
 
         return loss
 
@@ -134,21 +141,44 @@ class LesionClassifier(pl.LightningModule):
         self.val_ap.reset()
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
-        # AdamW with weight decay for better regularization
-        optimizer = torch.optim.AdamW(self.parameters())
-
-        # Warmup scheduler
         warmup_epochs = 5
-        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1.0 / warmup_epochs, end_factor=1.0, total_iters=warmup_epochs
-        )
+        if self.use_pretrained:
+            # Differential learning rates for pretrained model
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": self.model.trunk.parameters(), "lr": 1e-6},  # 100x lower for trunk
+                    {"params": self.model.heads.parameters(), "lr": 1e-4},  # Normal LR for head
+                ]
+            )
 
-        # Cosine annealing scheduler
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=self.max_epochs - warmup_epochs,
-            eta_min=1e-6,
-        )
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0 / warmup_epochs,
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+
+            cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.max_epochs - warmup_epochs,
+                eta_min=1e-7,  # Lower min for pretrained
+            )
+        else:
+            optimizer = torch.optim.AdamW(self.parameters())
+
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0 / warmup_epochs,
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+
+            # Cosine annealing scheduler
+            cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.max_epochs - warmup_epochs,
+                eta_min=1e-6,
+            )
 
         # Combine warmup + cosine
         scheduler = torch.optim.lr_scheduler.SequentialLR(
@@ -232,6 +262,8 @@ def train(
     cache_rate: float = 0,
     no_image_caching: bool = False,
     validate: bool = True,
+    n_folds: int = 10,
+    validation_fold: int = 0,
 ):
     if not csv_path.exists():
         raise Exception(f"File not found {csv_path}")
@@ -268,17 +300,16 @@ def train(
     # Split data into train and validation folds
     if validate:
         fold_map = generate_patient_fold_mapping(
-            df, group_col="case", stratify_col="class_id", n_folds=10
+            df, group_col="case", stratify_col="class_id", n_folds=n_folds
         )
         df["fold"] = df["case"].astype(str).map(fold_map)
 
-        val_fold = 0
-        train = df[df["fold"] != val_fold].reset_index(drop=True)
-        val = df[df["fold"] == val_fold].reset_index(drop=True)
+        train = df[df["fold"] != validation_fold].reset_index(drop=True)
+        val = df[df["fold"] == validation_fold].reset_index(drop=True)
 
         print("Train Data:")
         describe_data(train)
-        print("\nValidation Data:")
+        print(f"\nValidation Data (fold {validation_fold}):")
         describe_data(val)
     else:
         train = df
@@ -287,7 +318,8 @@ def train(
 
     # DEBUG
     # print("DEBUG: shorten dataset")
-    # train = df[df["fold"] == 1].reset_index(drop=True)
+    # train = train.iloc[:8].reset_index(drop=True)
+    # val = val.iloc[:2].reset_index(drop=True)
 
     total_lesions = len(train)
     classes = list(df["class_id"].unique())
