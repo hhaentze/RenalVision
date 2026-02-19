@@ -39,7 +39,7 @@ class CTPreprocessor(BasePreprocessor):
         window_width: float = 400,
         label_map: Optional[Dict[int, int]] = None,
         orientation: str = "RAS",
-        heavy_augmentations: bool = False,
+        heavy_augmentations: bool = True,
         rough_crop_margin: int | Sequence[int] = 20,
     ):
         self.target_spacing = target_spacing
