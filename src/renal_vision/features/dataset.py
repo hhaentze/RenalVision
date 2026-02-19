@@ -103,7 +103,7 @@ class FeatureDatasetProcessor:
             {
                 "lesion_id": pa.int16(),
                 "class_id": pa.int16(),
-                "volume": pa.float16(),
+                "volume": pa.int32(),
                 "augmented": pa.bool_(),
                 "aug_id": pa.int16(),
             }
