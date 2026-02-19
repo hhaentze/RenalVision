@@ -1,6 +1,6 @@
 # Renal Vision - Pretrained Bundles
 
-We trained these models on scans from both Charité and KiTS.
+We trained these models on scans from both in-house and KiTS.
 In total 4315 lesions were extracted from 1309 patients.
 
 You can use them either in the CLI:
@@ -14,13 +14,13 @@ from renal_vision.modeling.inference import LesionPredictor
 from renal_vision.bundles import ImplementedModels
 
 # Either use our enum class
-predictor1 = LesionPredictor(model_identifier=ImplementedModels.HISTOLOGY_SUBTYPE)
+predictor1 = LesionPredictor(model_identifier=ImplementedModels.RADIOMICS_BINARY)
 
 # Or just pass the string directly
 predictor2 =  LesionPredictor(model_identifier="RADIOMICS_BINARY")
 ```
 
-All models are xgboost classifer trained on KiTS & Charité (10-fold cross-validated)
+All models are xgboost classifer trained on KiTS & in-house (10-fold cross-validated)
 
 ### 1. Radiomics based Tumor/Cyst classifier
 - identifier: **RADIOMICS_BINARY**
