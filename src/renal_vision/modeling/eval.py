@@ -3,11 +3,8 @@ Evaluation workflow logic.
 Loads a trained model and test features, calculates metrics, and saves reports.
 """
 
-import json
 from pathlib import Path
 from typing import Any, Dict
-
-import numpy as np
 
 from renal_vision.features.dataset import FeatureDatasetProcessor
 from renal_vision.modeling.models import ModelBundle, predict_proba
@@ -71,34 +68,19 @@ def run_evaluation(
 
     evaluator = ModelEvaluator(y_true, y_proba, class_names=class_names_list)
 
-    metrics = evaluator.get_scalars().as_dict()
+    scalar_df = evaluator.get_scalars()
+    metrics = {}
+    metrics["f1_macro"] = scalar_df.loc["macro avg"]["f1-score"]
+    metrics["scalar_df"] = scalar_df
     # 5. Print & Save Report
     if verbose:
         print("\n" + "=" * 40)
-        print(f"Accuracy: {metrics['accuracy']:.4f}")
         print(f"F1 Score: {metrics['f1_macro']:.4f}")
-        print("=" * 40)
-        print("Classification Report:")
-        print(metrics["report"])
-
-        # Save raw metrics
-        # Convert numpy types to native python for JSON serialization
-        def convert_numpy(obj):
-            if isinstance(obj, np.integer):
-                return int(obj)
-            if isinstance(obj, np.floating):
-                return float(obj)
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            return obj
-
-        with open(output_path / "metrics.json", "w") as f:
-            json.dump(metrics, f, default=convert_numpy, indent=4)
 
         # 6. Generate Plots
-        evaluator.plot_cm(output_path / "confusion_matrix.png")
-        evaluator.plot_roc(output_path / "roc_curves.png")
-        evaluator.plot_pr(output_path / "pr_curves.png")
+        evaluator.plot_cm(output_path=output_path / "confusion_matrix.png")
+        evaluator.plot_roc(output_path=output_path / "roc_curves.png")
+        evaluator.plot_pr(output_path=output_path / "pr_curves.png")
         print(f"Results saved to {output_dir}")
 
     if return_preds:
