@@ -16,7 +16,7 @@
 </div>
 
 RenalVision is a modular platform for quantifying and classifying renal lesions. It keeps feature extraction (Radiomics, Neural Embeddings) cleanly separated from model training and evaluation, so swapping in a different backbone or classifier is straightforward. Trained models are packaged as self-contained bundles that carry their own preprocessing config and class mappings, making inference portable and reproducible.
-The platform ships with five pre-trained models out of the box: `radiomics_binary`, `radiomics`, `mevis`, `fmcib`, and `ctfm`.
+The platform ships with five pre-trained models out of the box: `radiomics_binary`, `radiomics`, `mevis`, `fmcib`, and `ctfm`. Read more about the bundles in their [readme.md](src/renal_vision/bundles/readme.md).
 
 ![Workflow](images/workflow.webp)
 
