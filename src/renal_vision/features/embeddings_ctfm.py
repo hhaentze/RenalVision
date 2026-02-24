@@ -31,9 +31,7 @@ class CTFMExtractor(BaseFeatureExtractor):
         else:
             self._active_features = feature_names
 
-        self.model = SegResEncoder.from_pretrained(
-            "project-lighter/ct_fm_feature_extractor", local_files_only=True
-        )
+        self.model = SegResEncoder.from_pretrained("project-lighter/ct_fm_feature_extractor")
         self.model.eval()
 
     @property
