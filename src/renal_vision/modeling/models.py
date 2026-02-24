@@ -113,10 +113,7 @@ class ModelFactory:
             else:
                 kwargs.setdefault("objective", "multi:softprob")
                 kwargs.setdefault("num_class", n_classes)
-            kwargs.setdefault("n_estimators", 100)
-            kwargs.setdefault("learning_rate", 0.1)
             kwargs.setdefault("eval_metric", "mlogloss")
-            kwargs.setdefault("max_depth", 3)
             return XGBClassifier(
                 **kwargs,
             )

@@ -37,13 +37,7 @@ class RadiomicsExtractor(BaseFeatureExtractor):
         radiomics_logger = logging.getLogger("radiomics")
         radiomics_logger.setLevel(logging.ERROR)
 
-        # 3. Enable standard classes (Lesion Classification Core Set)
-        self.engine.disableAllFeatures()
-        core_classes = ["shape", "firstorder", "glcm", "glrlm", "glszm"]
-        for c in core_classes:
-            self.engine.enableFeatureClassByName(c)
-
-        # 4. Resolve _active_features to a concrete list
+        # 3. Resolve _active_features to a concrete list
         if feature_names is None:
             self._active_features = self._get_all_possible_feature_names()
         else:
