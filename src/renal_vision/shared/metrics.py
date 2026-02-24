@@ -139,6 +139,7 @@ class ModelEvaluator:
             "linewidth": 2,
             "colors": sns.color_palette("husl", self.n_classes),
             "dpi": 300,
+            "pad_inches": 0.1,
         }
 
     # --- Public Interface ---
@@ -425,7 +426,9 @@ class ModelEvaluator:
             plt.grid(True, linestyle="--", alpha=0.5)
 
         if output_path:
-            plt.savefig(output_path, bbox_inches="tight", dpi=style["dpi"])
+            plt.savefig(
+                output_path, bbox_inches="tight", dpi=style["dpi"], pad_inches=style["pad_inches"]
+            )
         else:
             plt.show()
         plt.close()
