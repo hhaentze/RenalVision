@@ -2,17 +2,19 @@
 
 import argparse
 import json
+import os
 import tempfile
 from os.path import join
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
 from tqdm.auto import tqdm
 
 from renal_vision.modeling.eval import run_evaluation
 from renal_vision.modeling.train import run_training
+from renal_vision.shared.metrics import ModelEvaluator
 from renal_vision.shared.utils import describe_data, generate_patient_fold_mapping
 
 # --- 1. Configuration & Search Space ---
@@ -20,20 +22,16 @@ N_FOLDS = 10  # Reporting performance
 
 xgb_params = {
     "max_depth": [4, 6],
-    "learning_rate": [0.01, 0.05, 0.1],
-    "gamma": [0, 1, 5],
-    "min_child_weight": [4, 8, 12],
-    "subsample": [0.7, 0.9],
-    "colsample_bytree": [0.7, 0.9],
-}
-mlp_params = {
-    "hidden_layer_sizes": [(100,), (256,), (256, 128)],  # (100,) is standard
-    "alpha": [0.0001, 0.001, 0.01],  # L2 regularization term
-    "learning_rate_init": [0.001, 0.01],
-    "batch_size": [64, 128],
+    "colsample_bytree": [0.3, 0.7, 1],
+    "min_child_weight": [1, 6, 12],
+    "n_estimators": [100, 200],
+    "learning_rate": [0.1, 0.3],
 }
 
-configs = [("mlp", list(ParameterGrid(mlp_params))), ("xgboost", list(ParameterGrid(xgb_params)))]
+# mlp_params: D = {}
+# configs = [("mlp", list(ParameterGrid(mlp_params))), ("xgboost", list(ParameterGrid(xgb_params)))]
+
+configs = [("xgboost", list(ParameterGrid(xgb_params)))]
 tempfile.tempdir = "/tmp"
 
 
@@ -45,6 +43,8 @@ def main(
     group_col: str = "case",
     stratify_col: str = "class_id",
     aug_number: int = -1,
+    nparafolds: int = -1,
+    parafold: int = 0,
 ) -> None:
     # load features
     features = pd.read_parquet(feature_path)
@@ -60,27 +60,52 @@ def main(
     )
     features["fold"] = features[group_col].astype(str).map(fold_map)
 
-    config_results: Dict[str, List[float]] = {}
+    config_results: Dict[str, float] = {}
     param_lookup: Dict[str, Dict[str, Any]] = {}
 
-    n_loops = sum([N_FOLDS * len(c[1]) for c in configs])
-    with tqdm(total=n_loops, desc="Evaluating hyperparameters") as pbar:
-        for model_name, param_grid in configs:
-            for f in range(N_FOLDS):
-                with tempfile.TemporaryDirectory() as tmpdirname:
-                    # Split
-                    it_path = join(tmpdirname, "tmp_it.parquet")
-                    iv_path = join(tmpdirname, "tmp_iv.parquet")
-                    features[features["fold"] != f].to_parquet(it_path, index=False)
-                    features[(features["fold"] == f) & (~features["augmented"])].to_parquet(
-                        iv_path, index=False
-                    )
+    # Check for parallelism
+    global configs
+    if nparafolds >= 0:
+        new_configs = []
+        for c in configs:
+            params = c[1]
+            fold_length = len(params) // nparafolds
+            start = fold_length * parafold
+            end = fold_length * (parafold + 1)
+            if parafold == (nparafolds - 1):
+                end = len(params)
+            params = params[start:end]
+            new_configs.append((c[0], params))
+        configs = new_configs
+        output_csv = output_csv.replace(".csv", f"_fold_{parafold}.csv")
 
-                    for _, params in enumerate(param_grid):
-                        param_key = json.dumps(params | {"model": model_name}, sort_keys=True)
-                        if param_key not in param_lookup:
-                            param_lookup[param_key] = params
-                            config_results[param_key] = []
+    n_loops = sum([N_FOLDS * len(c[1]) for c in configs])
+
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        # prepare data
+        for f in range(N_FOLDS):
+            path = Path(tmpdirname) / f"fold_{f}"
+            os.makedirs(path)
+            it_path = path / "tmp_it.parquet"
+            iv_path = path / "tmp_iv.parquet"
+            features[features["fold"] != f].to_parquet(it_path, index=False)
+            features[(features["fold"] == f) & (~features["augmented"])].to_parquet(
+                iv_path, index=False
+            )
+
+        # run cross_val
+        with tqdm(total=n_loops, desc="Evaluating hyperparameters") as pbar:
+            for model_name, param_grid in configs:
+                for _, params in enumerate(param_grid):
+                    param_key = json.dumps(params | {"model": model_name}, sort_keys=True)
+                    if param_key not in param_lookup:
+                        param_lookup[param_key] = params
+
+                    results = []
+                    for f in range(N_FOLDS):
+                        path = Path(tmpdirname) / f"fold_{f}"
+                        it_path = path / "tmp_it.parquet"
+                        iv_path = path / "tmp_iv.parquet"
 
                         # Train and Eval
                         run_training(
@@ -88,7 +113,7 @@ def main(
                             tmpdirname,
                             model_type=model_name,
                             class_config_path=class_config_path,  # "names_binary.json",
-                            extractor_config_path=extractor_config_path,  # "/sc-scratch/sc-scratch-cc06-ag-ki-radiologie/kidney/embeddings/new/kits_radiomics.config.json",
+                            extractor_config_path=extractor_config_path,  # "features.config.json",
                             verbose=False,
                             class_column=stratify_col,
                             **params,
@@ -99,34 +124,36 @@ def main(
                             tmpdirname,
                             class_column=stratify_col,
                             verbose=False,
+                            return_preds=True,
                         )
-                        config_results[param_key].append(m["f1"])
+                        results.append(m)
                         pbar.update(1)
+
+                    # calculate avg AUC across folds
+                    y_true_list = []
+                    y_proba_list = []
+                    for fold_res in results:
+                        df = fold_res["pred_df"]
+                        y_true_list.append(df["y_true"].values)
+                        y_proba_list.append(df["y_proba"].values)
+
+                    evaluator = ModelEvaluator(y_true_list, y_proba_list)
+                    auc = evaluator.get_auc(with_ci=False).loc["MACRO AVERAGE"]["Mean"]
+                    config_results[param_key] = auc
 
         # --- 3. Analysis and Ranking ---
         ranking_data = []
 
-        for param_key, scores in config_results.items():
-            mean_score = np.mean(scores)
-            std_score = np.std(scores)
-
-            ranking_data.append(
-                {
-                    "params_json": param_key,
-                    "mean_f1": mean_score,
-                    "std_f1": std_score,
-                    "min_f1": np.min(scores),  # Check for "worst-case" scenario
-                    "cv_scores": scores,
-                }
-            )
+        for param_key, auc in config_results.items():
+            ranking_data.append({"auc": auc, "params_json": param_key})
 
     # Convert to DataFrame for easy viewing
-    report_df = pd.DataFrame(ranking_data).sort_values(by="mean_f1", ascending=False)
+    report_df = pd.DataFrame(ranking_data).sort_values(by="auc", ascending=False)
 
     # --- 4. Print the Top 3 Configurations ---
-    print("\n--- TOP 3 CONFIGURATIONS BY MEAN F1 ---")
+    print("\n--- TOP 3 CONFIGURATIONS BY MEAN AUC ---")
     for idx, row in report_df.head(3).iterrows():
-        print(f"\nRank {idx + 1} | Mean F1: {row['mean_f1']:.4f} (±{row['std_f1']:.4f})")
+        print(f"\nRank {idx + 1} | Mean AUC: {row['auc']:.3f}")
         print(f"Parameters: {row['params_json']}")
 
     # --- 5. Save the configurations ---
@@ -150,6 +177,12 @@ if __name__ == "__main__":
         help="How many augmentations should be included? (default: all)",
     )
 
+    # Arguments for Parallelisation with Slurm
+    parser.add_argument(
+        "--nfolds", type=int, default=-1, help="Parallelise processing across n folds"
+    )
+    parser.add_argument("--fold", type=int, default=0, help="Parameter fold to use")
+
     args = parser.parse_args()
 
     main(
@@ -160,4 +193,6 @@ if __name__ == "__main__":
         group_col=args.group_col,
         stratify_col=args.stratify_col,
         aug_number=args.aug_number,
+        nparafolds=args.nfolds,
+        parafold=args.fold,
     )
