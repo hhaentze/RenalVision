@@ -28,6 +28,17 @@ def mock_single_lesion() -> Tuple[MetaTensor, MetaTensor]:
 
 
 @pytest.fixture
+def mock_small_lesion() -> Tuple[MetaTensor, MetaTensor]:
+    """Generates synthetic 3D CT image and segmentation."""
+    spatial_shape = (60, 60, 60)  # Smaller for speed
+    img_array = torch.rand(*spatial_shape)
+    seg_array = torch.zeros(*spatial_shape)
+    seg_array[10:15, 10:15, 10:15] = 1  # Lesion 1
+
+    return MetaTensor(img_array), MetaTensor(seg_array)
+
+
+@pytest.fixture
 def mock_two_lesions() -> Tuple[MetaTensor, MetaTensor]:
     """
     Generates a synthetic 3D CT image and a corresponding segmentation mask.

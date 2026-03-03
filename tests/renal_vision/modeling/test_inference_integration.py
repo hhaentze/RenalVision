@@ -50,3 +50,32 @@ class TestEndToEndInference:
         assert "probability" in result
         assert "volume" in result
         assert isinstance(result["class_id"], (int, np.integer))
+
+    def test_infer_small_lesion(self, real_predictor, mock_small_lesion):
+        """
+        Infer a small lesion, should raise an error
+        """
+        img, seg = mock_small_lesion
+
+        with pytest.raises(ValueError) as exc_info:
+            real_predictor.infer_lesion(img, seg)
+
+        assert "volume" in str(exc_info.value)
+
+    def test_infer_small_lesion_explicit(self, mock_small_lesion):
+        """
+        Smoke Test for single lesion inference.
+        """
+        img, seg = mock_small_lesion
+        real_predictor = LesionPredictor(
+            model_identifier=ImplementedModels.RADIOMICS_BINARY, validate_volume=False
+        )
+        result = real_predictor.infer_lesion(img, seg)
+
+        assert isinstance(result, dict)
+        assert "class_id" in result
+        assert "class_name" in result
+        assert "confidence" in result
+        assert "probability" in result
+        assert "volume" in result
+        assert isinstance(result["class_id"], (int, np.integer))

@@ -13,6 +13,7 @@ from monai.data import MetaTensor
 from monai.transforms import SaveImage
 
 from renal_vision.bundles import ImplementedModels, load_model_bundle, suggest_similar_enum
+from renal_vision.features.base_extractor import BaseFeatureExtractor
 from renal_vision.features.base_preprocessor import ImageLike
 from renal_vision.features.preprocessing import (
     CTFMPreprocessor,
@@ -31,7 +32,9 @@ class LesionPredictor:
     2. Classification (using trained model)
     """
 
-    def __init__(self, model_identifier: Union[str, Path, ImplementedModels]):
+    def __init__(
+        self, model_identifier: Union[str, Path, ImplementedModels], validate_volume: bool = True
+    ):
         # Load model from bundle zoo
         if isinstance(model_identifier, ImplementedModels) or (
             model_identifier in ImplementedModels.__members__
@@ -56,7 +59,10 @@ class LesionPredictor:
         # Reconstruct the feature extraction pipeline used during training
         self.extractor = self._reconstruct_extractor(self.bundle.extractor_config)
 
-    def _reconstruct_extractor(self, config: Dict[str, Any]) -> Any:
+        if not validate_volume:
+            self.extractor.min_volume = 0
+
+    def _reconstruct_extractor(self, config: Dict[str, Any]) -> BaseFeatureExtractor:
         """
         Factory method to instantiate the correct extractor from config dictionary.
         """
