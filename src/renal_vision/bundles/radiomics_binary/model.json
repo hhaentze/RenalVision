@@ -225,7 +225,7 @@
             "original_shape_SurfaceVolumeRatio",
             "original_shape_VoxelVolume"
         ],
-        "min_volume": 400,
+        "min_volume": 50,
         "preprocessor": {
             "name": "CTPreprocessor",
             "target_spacing": [
