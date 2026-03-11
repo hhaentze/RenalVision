@@ -33,7 +33,7 @@ def mock_small_lesion() -> Tuple[MetaTensor, MetaTensor]:
     spatial_shape = (60, 60, 60)  # Smaller for speed
     img_array = torch.rand(*spatial_shape)
     seg_array = torch.zeros(*spatial_shape)
-    seg_array[10:15, 10:15, 10:15] = 1  # Lesion 1
+    seg_array[10:13, 10:13, 10:13] = 1  # Lesion 1
 
     return MetaTensor(img_array), MetaTensor(seg_array)
 
