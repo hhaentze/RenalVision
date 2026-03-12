@@ -157,8 +157,9 @@ class LesionPredictor:
         """
 
         # 1. Filter for lesions, assign unique ids (min_volume of 50 to exclude noise)
+        filter_threshold = 50 if self.extractor.min_volume > 50 else 0
         seg = self.extractor.preprocessor._prepare_data_point(seg)
-        seg_obj, metadata_list = self.filter_components(seg, min_volume=50)
+        seg_obj, metadata_list = self.filter_components(seg, min_volume=filter_threshold)
 
         # 2. Check volume
         min_volume = self.extractor.min_volume
