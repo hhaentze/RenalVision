@@ -56,6 +56,11 @@ radiomics = ["pyradiomics>=3.0.1"]
 
 mevis = ["medicalmultitaskmodeling==1.0.4"]
 
+# UNICORN uses the newer mmm.api.M3Model API (>=1.6.1), which removed the
+# NativeBlocks API used by the `mevis` extra above -- so these two are mutually
+# exclusive in one environment.
+mevis_unicorn = ["medicalmultitaskmodeling>=1.6.1", "m3-sdk"]
+
 fmcib = ["foundation-cancer-image-biomarker==1.0.0"]
 
 ctfm = ["lighter-zoo==0.1.3"]

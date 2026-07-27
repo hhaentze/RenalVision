@@ -104,6 +104,15 @@ def run_extract(args: argparse.Namespace) -> None:
             preprocessor=preprocessor,
             min_volume=args.min_volume,
         )
+    elif args.extractor == "mevis_unicorn":
+        from .embeddings_mevis_unicorn import MevisUnicornExtractor
+        from .preprocessing import MevisPreprocessor
+
+        preprocessor = MevisPreprocessor(label_map=label_map)
+        extractor = MevisUnicornExtractor(
+            preprocessor=preprocessor,
+            min_volume=args.min_volume,
+        )
     else:
         # Placeholder for future extractors
         raise ValueError(f"Unknown extractor type: {args.extractor}")
@@ -142,7 +151,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "mevis", "fmcib", "ctfm", "renalclip", "spectre"],
+        choices=["radiomics", "mevis", "fmcib", "ctfm", "renalclip", "spectre", "mevis_unicorn"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
