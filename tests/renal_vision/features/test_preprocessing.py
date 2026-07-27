@@ -7,6 +7,7 @@ from renal_vision.features.preprocessing import (
     CTPreprocessor,
     FMCIBPreprocessor,
     MevisPreprocessor,
+    RenalCLIPPreprocessor,
 )
 
 # ==========================================
@@ -109,6 +110,31 @@ class TestCropPreprocessors:
             assert "class_id" in metadata
             assert "volume" in metadata
 
+    @pytest.mark.parametrize("processor_class", [RenalCLIPPreprocessor])
+    def test_stream_components_shape_contract_renalclip(self, processor_class, mock_two_lesions):
+        """Ensure stream_components yields the fixed 128x128x32 model input."""
+        image, seg = mock_two_lesions
+        preprocessor = processor_class()
+
+        components = list(preprocessor.stream_components(image, seg, min_volume=1))
+
+        assert len(components) == 2, "Should detect the 2 synthetic lesions created in fixture"
+
+        for comp_img, comp_mask, metadata in components:
+            assert isinstance(comp_img, np.ndarray)
+            assert isinstance(comp_mask, np.ndarray)
+            expected_shape = (128, 128, 32)
+            assert comp_img.shape == expected_shape, (
+                f"Expected image shape {expected_shape}, but got {comp_img.shape}"
+            )
+            assert comp_mask.shape == expected_shape, (
+                f"Expected mask shape {expected_shape}, but got {comp_mask.shape}"
+            )
+            # Intensities are windowed and scaled to [0, 1]
+            assert comp_img.min() >= 0.0 and comp_img.max() <= 1.0
+            assert "class_id" in metadata
+            assert "volume" in metadata
+
     @pytest.mark.parametrize("processor_class", [MevisPreprocessor])
     def test_stream_components_shape_contract_mevis(self, processor_class, mock_two_lesions):
         """
@@ -146,8 +172,19 @@ class TestCropPreprocessors:
 
 
 class TestAugmentations:
-    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
-    HEAVY_AUG_PREPROCESSORS = [FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
+    ALL_PREPROCESSORS = [
+        CTPreprocessor,
+        FMCIBPreprocessor,
+        MevisPreprocessor,
+        CTFMPreprocessor,
+        RenalCLIPPreprocessor,
+    ]
+    HEAVY_AUG_PREPROCESSORS = [
+        FMCIBPreprocessor,
+        MevisPreprocessor,
+        CTFMPreprocessor,
+        RenalCLIPPreprocessor,
+    ]
 
     @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
     def test_no_augmentation1(self, preprocessor_class, mock_single_lesion):
@@ -198,7 +235,13 @@ class TestAugmentations:
 # 2. Edge Case Tests
 # ==========================================
 class TestEdgeCases:
-    ALL_PREPROCESSORS = [CTPreprocessor, FMCIBPreprocessor, MevisPreprocessor, CTFMPreprocessor]
+    ALL_PREPROCESSORS = [
+        CTPreprocessor,
+        FMCIBPreprocessor,
+        MevisPreprocessor,
+        CTFMPreprocessor,
+        RenalCLIPPreprocessor,
+    ]
 
     @pytest.mark.parametrize("preprocessor_class", ALL_PREPROCESSORS)
     def test_empty_segmentation_handling(self, preprocessor_class, mock_no_lesion):

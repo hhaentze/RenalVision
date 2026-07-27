@@ -2,10 +2,12 @@
 Preprocessing logic using MONAI for CT images.
 """
 
-from typing import Any, Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from monai.transforms import (
+    CenterSpatialCropd,
     CropForegroundd,
     EnsureChannelFirstd,
     EnsureTyped,
@@ -24,7 +26,7 @@ from monai.transforms import (
 )
 
 from .base_preprocessor import BasePreprocessor
-from .transforms import ConditionalAddChanneld, MinimumCropForegroundd
+from .transforms import ConditionalAddChanneld, FixedCropForegroundd, MinimumCropForegroundd
 
 
 class CTPreprocessor(BasePreprocessor):
@@ -34,10 +36,10 @@ class CTPreprocessor(BasePreprocessor):
 
     def __init__(
         self,
-        target_spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        target_spacing: tuple[float, float, float] = (1.0, 1.0, 1.0),
         window_center: float = 40,
         window_width: float = 400,
-        label_map: Optional[Dict[int, int]] = None,
+        label_map: dict[int, int] | None = None,
         orientation: str = "RAS",
         heavy_augmentations: bool = True,
         rough_crop_margin: int | Sequence[int] = 20,
@@ -151,7 +153,7 @@ class CTPreprocessor(BasePreprocessor):
             intensity_transforms=intensity_transforms,
         )
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         return {
             "name": "CTPreprocessor",
             "target_spacing": self.target_spacing,
@@ -168,13 +170,13 @@ class FMCIBPreprocessor(CTPreprocessor):
     - Normalizes intensity by subtracting -1024 and dividing by 3072
     """
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config["name"] = "FMCIBPreprocessor"
         config["target_shape"] = self.target_shape
         return config
 
-    def __init__(self, target_shape: Optional[Tuple[int, int, int]] = (50, 50, 50), **kwargs):
+    def __init__(self, target_shape: tuple[int, int, int] | None = (50, 50, 50), **kwargs):
         super().__init__(heavy_augmentations=True, **kwargs)
         self.target_shape = target_shape
 
@@ -213,12 +215,12 @@ class MevisPreprocessor(CTPreprocessor):
     - Normalizes intensity to a specified window and scales to [0,1]
     """
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config["name"] = "MevisPreprocessor"
         return config
 
-    def __init__(self, target_spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0), **kwargs):
+    def __init__(self, target_spacing: tuple[float, float, float] = (1.0, 1.0, 1.0), **kwargs):
         super().__init__(target_spacing=target_spacing, heavy_augmentations=True, **kwargs)
 
         # Cropping Transforms
@@ -257,6 +259,91 @@ class MevisPreprocessor(CTPreprocessor):
         ]
 
 
+class RenalCLIPPreprocessor(CTPreprocessor):
+    """
+    Preprocessor replicating the RenalCLIP protocol
+    (Tao et al., Nat Commun 2026; https://github.com/dt-yuhui/RenalCLIP):
+
+    - Resample to an anisotropic spacing of 1.0 x 1.0 x 5.0 mm (RAS).
+    - Crop a *fixed* physical box of 140 x 140 x 160 mm (= 140 x 140 x 32 voxels)
+      centered on the lesion, keeping surrounding kidney context and padding
+      out-of-bounds voxels with air (-1000 HU).
+    - Window with level 50 HU / width 500 HU (i.e. clip to [-200, 300] HU) and
+      scale to [0, 1].
+    - Deterministic center crop to 128 x 128 x 32, matching the inference-time
+      crop used by the authors. (Their random 128 crop is a training-only
+      augmentation for the foundation model and is not applicable here, since we
+      only run the frozen backbone for feature extraction.)
+
+    Note on lesion size: the box is a fixed size, so RenalCLIP applies no special
+    small/large-lesion handling. Small lesions simply retain more surrounding
+    context (padded with -1000 HU where the box exceeds the image); large lesions
+    that exceed 140 x 140 x 160 mm are truncated by the box.
+    """
+
+    def get_config(self) -> dict[str, Any]:
+        config = super().get_config()
+        config["name"] = "RenalCLIPPreprocessor"
+        config["crop_size"] = self.crop_size
+        config["model_input_size"] = self.model_input_size
+        config["pad_value"] = self.pad_value
+        return config
+
+    def __init__(
+        self,
+        target_spacing: tuple[float, float, float] = (1.0, 1.0, 5.0),
+        orientation: str = "RAS",
+        crop_size: tuple[int, int, int] = (140, 140, 32),
+        model_input_size: tuple[int, int, int] = (128, 128, 32),
+        window_center: float = 50,
+        window_width: float = 500,
+        pad_value: float = -1000,
+        **kwargs,
+    ):
+        super().__init__(
+            target_spacing=target_spacing,
+            orientation=orientation,
+            window_center=window_center,
+            window_width=window_width,
+            heavy_augmentations=True,
+            # keep enough context around the lesion for the fixed box (half of 140 mm)
+            rough_crop_margin=90,
+            **kwargs,
+        )
+        self.crop_size = crop_size
+        self.model_input_size = model_input_size
+        self.pad_value = pad_value
+
+        # Cropping: fixed box centered on the lesion, retaining surrounding context.
+        self.crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
+            FixedCropForegroundd(
+                keys=["image", "seg"],
+                source_key="seg",
+                spatial_size=crop_size,
+                pad_value=pad_value,
+            ),
+        ]
+
+        # Intensity: deterministic center crop to the model input size (matching
+        # inference), then window to [0, 1]. The inherited augmentations (affine,
+        # noise, etc.) still run under augment=True to diversify the extracted
+        # embeddings; only RenalCLIP's train-time random crop is dropped.
+        win_min = window_center - window_width / 2
+        win_max = window_center + window_width / 2
+        self.intensity_transforms = [
+            CenterSpatialCropd(keys=["image", "seg"], roi_size=model_input_size),
+            ScaleIntensityRanged(
+                keys=["image"],
+                a_min=win_min,
+                a_max=win_max,
+                b_min=0,
+                b_max=1,
+                clip=True,
+            ),
+        ]
+
+
 class CTFMPreprocessor(CTPreprocessor):
     """
     Preprocessor using CTFM inspired cropping and normalization:
@@ -264,14 +351,14 @@ class CTFMPreprocessor(CTPreprocessor):
     - crop without resizing
     """
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config["name"] = "CTFMPreprocessor"
         return config
 
     def __init__(
         self,
-        target_spacing: Tuple[float, float, float] = (3.0, 1.0, 1.0),
+        target_spacing: tuple[float, float, float] = (3.0, 1.0, 1.0),
         orientation="SPL",
         **kwargs,
     ):

@@ -1,7 +1,7 @@
 # Copyright 2025 Hartmut Häntze
 
-from collections.abc import Callable, Sequence
-from typing import Dict, Hashable, Mapping, Union
+from collections.abc import Callable, Hashable, Mapping, Sequence
+from typing import cast
 
 import numpy as np
 import torch
@@ -70,13 +70,13 @@ class MinimumCropForegroundd(CropForegroundd):
         keys: KeysCollection,
         source_key: str,
         select_fn: Callable = is_positive,
-        channel_indices: Union[IndexSelection, None] = None,
-        margin: Union[Sequence[int], int] = 0,
+        channel_indices: IndexSelection | None = None,
+        margin: Sequence[int] | int = 0,
         allow_smaller: bool = True,
-        k_divisible: Union[Sequence[int], int] = 1,
+        k_divisible: Sequence[int] | int = 1,
         mode: SequenceStr = PytorchPadMode.CONSTANT,
-        start_coord_key: Union[str, None] = "foreground_start_coord",
-        end_coord_key: Union[str, None] = "foreground_end_coord",
+        start_coord_key: str | None = "foreground_start_coord",
+        end_coord_key: str | None = "foreground_end_coord",
         allow_missing_keys: bool = False,
         lazy: bool = False,
         **pad_kwargs,
@@ -109,6 +109,76 @@ class MinimumCropForegroundd(CropForegroundd):
         )
 
 
+class FixedCropForegroundd(MapTransform):
+    """
+    Crop a fixed-size box centered on the foreground of ``source_key``.
+
+    Unlike ``CropForegroundd`` (which crops tightly to the foreground bounding
+    box), this keeps a fixed spatial size regardless of lesion size and retains
+    the surrounding tissue/context inside the box. Regions of the box that fall
+    outside the image are filled with a constant value (``pad_value`` for image
+    keys, 0 for ``seg_key``). This mirrors the RenalCLIP protocol, where a fixed
+    physical box centered on the lesion is cropped and out-of-bounds voxels are
+    padded with air (-1000 HU).
+    """
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        source_key: str,
+        spatial_size: Sequence[int],
+        pad_value: float = -1000.0,
+        seg_key: str = "seg",
+        allow_missing_keys: bool = False,
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.source_key = source_key
+        self.spatial_size = np.asarray(spatial_size, dtype=np.int64)
+        self.pad_value = pad_value
+        self.seg_key = seg_key
+
+    def _foreground_center(self, seg: torch.Tensor) -> np.ndarray:
+        """Geometric center of the foreground bounding box (channel-first input)."""
+        spatial_shape = np.asarray(seg.shape[1:], dtype=np.int64)
+        mask = seg[0] > 0
+        if not bool(mask.any()):
+            return spatial_shape // 2
+        coords = torch.nonzero(mask, as_tuple=False)
+        lo = coords.amin(dim=0)
+        hi = coords.amax(dim=0)
+        center = ((lo + hi).float() / 2.0).round().to(torch.int64)
+        return center.cpu().numpy()
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        center = self._foreground_center(cast(torch.Tensor, d[self.source_key]))
+        size = self.spatial_size
+        start = center - size // 2
+        end = start + size
+
+        for key in self.key_iterator(d):
+            img = d[key]
+            spatial_shape = np.asarray(img.shape[1:], dtype=np.int64)
+
+            src_start = np.maximum(start, 0)
+            src_end = np.minimum(end, spatial_shape)
+            pad_before = src_start - start
+            pad_after = end - src_end
+
+            slices = (slice(None),) + tuple(
+                slice(int(s), int(e)) for s, e in zip(src_start, src_end)
+            )
+            cropped = cast(torch.Tensor, img[slices])
+
+            fill = 0.0 if key == self.seg_key else self.pad_value
+            # torch.nn.functional.pad expects padding from the last spatial dim first
+            pad_arg: list[int] = []
+            for i in reversed(range(len(size))):
+                pad_arg.extend([int(pad_before[i]), int(pad_after[i])])
+            d[key] = torch.nn.functional.pad(cropped, pad_arg, mode="constant", value=float(fill))
+        return d
+
+
 class ConditionalAddChannel(Transform):
     """
     Adds a channel dimension to the input if it does not have one (ndim=3).
@@ -131,7 +201,7 @@ class ConditionalAddChanneld(MapTransform):
     def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False) -> None:
         super().__init__(keys, allow_missing_keys)
 
-    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
         for key in self.key_iterator(d):
             if d[key].ndim == 3:

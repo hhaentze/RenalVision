@@ -12,7 +12,6 @@ from renal_vision.shared.parser_config import get_base_parser
 def run_extract(args: argparse.Namespace) -> None:
     import json
     from pathlib import Path
-    from typing import Dict, Optional
 
     import pandas as pd
 
@@ -20,7 +19,7 @@ def run_extract(args: argparse.Namespace) -> None:
     from .base_preprocessor import BasePreprocessor
     from .dataset import FeatureDatasetProcessor
 
-    def load_label_map(json_path: Optional[str]) -> Dict[int, int]:
+    def load_label_map(json_path: str | None) -> dict[int, int]:
         """Load label mapping from JSON file."""
         if not json_path:
             return {0: 0}
@@ -87,6 +86,15 @@ def run_extract(args: argparse.Namespace) -> None:
             preprocessor=preprocessor,
             min_volume=args.min_volume,
         )
+    elif args.extractor == "renalclip":
+        from .embeddings_renalclip import RenalCLIPExtractor
+        from .preprocessing import RenalCLIPPreprocessor
+
+        preprocessor = RenalCLIPPreprocessor(label_map=label_map)
+        extractor = RenalCLIPExtractor(
+            preprocessor=preprocessor,
+            min_volume=args.min_volume,
+        )
     else:
         # Placeholder for future extractors
         raise ValueError(f"Unknown extractor type: {args.extractor}")
@@ -125,7 +133,7 @@ def config_extract(parser: argparse.ArgumentParser) -> None:
         "--extractor",
         type=str,
         default="radiomics",
-        choices=["radiomics", "mevis", "fmcib", "ctfm"],
+        choices=["radiomics", "mevis", "fmcib", "ctfm", "renalclip"],
         help="Type of feature extractor to use.",
     )
     parser.add_argument(
