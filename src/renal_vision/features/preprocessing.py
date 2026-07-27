@@ -396,3 +396,86 @@ class CTFMPreprocessor(CTPreprocessor):
                 clip=True,
             ),
         ]
+
+
+class SpectrePreprocessor(CTPreprocessor):
+    """
+    Preprocessor for the SPECTRE foundation model
+    (Claessens et al., CVPR 2026; https://github.com/cclaess/SPECTRE).
+
+    We crop each lesion to a single fixed 128 x 128 x 64 window centered on the
+    lesion, following the authors' own lesion-classification recipe (their
+    LUNA25 transform: fixed spacing -> pad/crop to one 128 x 128 x 64 window).
+    A single window keeps the receptive field tight around the lesion instead of
+    tiling in background-heavy context; small lesions retain surrounding tissue
+    (padded with air at the image edge), large tumors are center-cropped.
+
+    Two SPECTRE-specific choices:
+    - The image is kept in raw Hounsfield Units: SPECTRE windows internally to
+      HU [-1000, 1000] -> [0, 1] (``window_scan``), so no intensity normalization
+      is applied here. Out-of-bounds voxels are padded with air (-1000 HU) so
+      they map to 0 after SPECTRE's windowing.
+    - Only spatial augmentations are used; the inherited intensity augmentations
+      assume normalized inputs and are dropped for raw-HU crops.
+
+    Spacing is fixed to ``target_spacing`` (default 1 x 1 x 1.5 mm, a
+    128 x 128 x 96 mm field of view) for a uniform physical window across the
+    benchmark. SPECTRE was pretrained to be robust to voxel spacing, so a fixed
+    spacing is a benign, streamlining choice.
+    """
+
+    def get_config(self) -> dict[str, Any]:
+        config = super().get_config()
+        config["name"] = "SpectrePreprocessor"
+        config["window_size"] = self.window_size
+        config["pad_value"] = self.pad_value
+        return config
+
+    def __init__(
+        self,
+        target_spacing: tuple[float, float, float] = (1.0, 1.0, 1.5),
+        orientation: str = "RAS",
+        window_size: tuple[int, int, int] = (128, 128, 64),
+        pad_value: float = -1000,
+        **kwargs,
+    ):
+        super().__init__(
+            target_spacing=target_spacing,
+            orientation=orientation,
+            heavy_augmentations=True,
+            # keep enough context around the lesion for the fixed window
+            rough_crop_margin=100,
+            **kwargs,
+        )
+        self.window_size = window_size
+        self.pad_value = pad_value
+
+        # Fixed single window centered on the lesion, retaining surrounding tissue
+        # and padding out-of-bounds voxels with air (image) / background (seg).
+        self.crop_transforms = [
+            ConditionalAddChanneld(keys=["image", "seg"]),
+            FixedCropForegroundd(
+                keys=["image", "seg"],
+                source_key="seg",
+                spatial_size=window_size,
+                pad_value=pad_value,
+            ),
+        ]
+
+        # Spatial-only augmentations (intensity is left raw for SPECTRE to window).
+        self.aug_transforms = [
+            RandAffined(
+                keys=["image", "seg"],
+                prob=0.5,
+                rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
+                scale_range=(0.1, 0.1, 0.1),
+                translate_range=(3, 3, 3),
+                mode=("bilinear", "nearest"),
+                padding_mode="border",
+                lazy=True,
+            ),
+            RandAffined(keys=["seg"], prob=0.5, translate_range=2, mode="nearest", lazy=True),
+        ]
+
+        # SPECTRE performs HU windowing internally; keep the crop in raw HU.
+        self.intensity_transforms = []
