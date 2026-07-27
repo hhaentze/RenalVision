@@ -245,6 +245,17 @@ class RenalCLIPExtractor(BaseFeatureExtractor):
         if np.sum(lesion_mask) == 0:
             raise ValueError("Lesion mask is empty during feature extraction.")
 
+        # Reorder axes to match the authors' network input convention. The
+        # preprocessed crop is RAS-ordered ``(R, A, S)`` == ``(128, 128, 32)``,
+        # with the anisotropic 5 mm axis (S, 32 voxels) last. RenalCLIP instead
+        # feeds ``[N, C, D, W, H]`` with that depth axis *first* -- their
+        # data loader transposes ``(C, W, H, D) -> (C, D, W, H)`` right before
+        # the ResNet (utils/data_util.py, ``Transposed(indices=(0, 3, 1, 2))``).
+        # Because the 3D convolutions are not permutation-invariant, feeding the
+        # depth axis in the wrong slot yields a different (invalid) embedding, so
+        # we move S to the front: ``(R, A, S) -> (S, R, A)`` == ``(D, W, H)``.
+        image = np.ascontiguousarray(np.transpose(image, (2, 0, 1)))
+
         image_tensor = torch.from_numpy(image).float().unsqueeze(0).unsqueeze(0).to(self.device)
 
         with torch.no_grad():

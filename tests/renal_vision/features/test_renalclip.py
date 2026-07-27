@@ -1,13 +1,50 @@
+import numpy as np
 import torch
 
 from renal_vision.features.embeddings_renalclip import (
     RenalCLIPBackbone,
+    RenalCLIPExtractor,
     _load_backbone_weights,
 )
 
 
 def _randomize(v: torch.Tensor) -> torch.Tensor:
     return torch.randn_like(v) if v.is_floating_point() else v.clone()
+
+
+class _ShapeCaptureModel:
+    """Stand-in backbone that records the shape of the tensor it is fed."""
+
+    def __init__(self) -> None:
+        self.seen_shape = None
+
+    def eval(self):
+        return self
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        self.seen_shape = tuple(x.shape)
+        return torch.zeros(1, 512)
+
+
+def test_extractor_feeds_depth_first_axis_order():
+    """
+    RenalCLIP expects ``[N, C, D=32, W, H]`` (the authors transpose the
+    RAS-ordered crop so the anisotropic 5 mm/32-voxel axis is first). The
+    preprocessed crop arrives RAS-ordered as ``(R, A, S) = (128, 128, 32)``;
+    the extractor must move S to the front before calling the network.
+    """
+    extractor = object.__new__(RenalCLIPExtractor)
+    extractor.device = "cpu"
+    extractor._active_features = [f"F{f}" for f in range(512)]
+    extractor.model = _ShapeCaptureModel()
+
+    image = np.zeros((128, 128, 32), dtype=np.float32)  # (R, A, S), depth last
+    mask = np.ones((128, 128, 32), dtype=np.int16)
+
+    extractor._extract_single_lesion(image, mask)
+
+    # [N, C, D, W, H] with depth (32) first, not last.
+    assert extractor.model.seen_shape == (1, 1, 32, 128, 128)
 
 
 class TestRenalCLIPBackbone:

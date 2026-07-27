@@ -112,6 +112,7 @@ ignore_missing_imports = true # Crucial for ML libs (torch, monai) lacking stubs
 disable_error_code = [
     "no-any-return",
 ] # Dangerous! By disabling this we open the door for type leaks. However, maintaining this rule is challenging.
+exclude = "tests/"
 
 ############### Testing & Coverage ###############
 
