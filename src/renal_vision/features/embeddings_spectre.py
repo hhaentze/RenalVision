@@ -1,15 +1,18 @@
 """
 Feature extractor implementation using the SPECTRE foundation model.
 
-SPECTRE (Claessens et al., CVPR 2026; https://github.com/cclaess/SPECTRE) is a
-3D CT vision transformer distributed as the ``spectre-fm`` package. It tiles a
-volume into 128 x 128 x 64 windows, embeds each with a local ViT backbone, and
-aggregates the windows into a single scan-level embedding with a feature
-combiner (a global ViT). We hand it a raw-HU lesion crop (a whole number of
-windows, produced by ``SpectrePreprocessor``); SPECTRE performs the HU windowing
-and tiling internally, and we take the scan-level CLS token as the per-lesion
-embedding -- the same vector the authors use for their frozen-embedding
-biomarker/linear-probe evaluation (``outputs[:, 0]``).
+3D CT vision transformer distributed as the ``spectre-fm`` package. It has two
+components: a *local* ViT backbone (``ViT_l``) that embeds a single
+128 x 128 x 64 crop, and a *global* ViT feature combiner (``ViT_g``) that
+attends across the grid of crops from a whole scan to produce one scan-level
+embedding.
+
+We extract **backbone-only, single-window** embeddings: each lesion is cropped
+to exactly one 128 x 128 x 64 window (by ``SpectrePreprocessor``) and embedded
+with the local backbone alone; we take that backbone's CLS token as the
+per-lesion embedding. This is the configuration the authors themselves use when
+a lesion fits in one window -- their LUNA25 lung-nodule recipe fine-tunes the
+backbone (``ViT_l``) on a single 128 x 128 x 64 crop with no feature combiner.
 
 Weights are downloaded automatically by ``from_pretrained`` from
 https://huggingface.co/cclaess/SPECTRE.
@@ -32,7 +35,7 @@ class SpectreExtractor(BaseFeatureExtractor):
         feature_names: list[str] | None = None,
         min_volume: int = 400,
         model_name: str = "spectre-large",
-        include_feature_combiner: bool = True,
+        include_feature_combiner: bool = False,
     ) -> None:
         if preprocessor is None:
             preprocessor = SpectrePreprocessor()
@@ -96,8 +99,14 @@ class SpectreExtractor(BaseFeatureExtractor):
         image_tensor = torch.from_numpy(image).float().unsqueeze(0)
 
         with torch.no_grad():
-            output = self.model(image_tensor)  # (T', F'): CLS token + one per window
+            output = self.model(image_tensor)
 
-        cls_token = output[0].detach().cpu()  # scan-level CLS -> (F',)
+        if self.model.has_feature_combiner:
+            # Combiner path: (T', F') -> scan-level CLS token.
+            cls_token = output[0].detach().cpu()
+        else:
+            # Backbone-only path: (N=1, T, F) -> single window's CLS token
+            # (num_prefix_tokens == 1, so token 0 is CLS).
+            cls_token = output[0, 0].detach().cpu()
 
         return {fname: float(val) for fname, val in zip(self.feature_names, cls_token.tolist())}
