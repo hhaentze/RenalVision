@@ -39,7 +39,7 @@ dev = [
     "ipykernel>=6.0.0",
 
     # Linting and Formatting
-    "ruff>=0.1.0",
+    "ruff>=0.14.0,<0.15.0",
     "nbqa>=1.7.0",
     "pre-commit>=3.3.0",
 
