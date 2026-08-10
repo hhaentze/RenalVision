@@ -2,7 +2,7 @@ import pickle
 from difflib import get_close_matches
 from enum import Enum
 from importlib import resources
-from typing import Optional, Type, TypeVar
+from typing import TypeVar
 
 from renal_vision.modeling.models import ModelBundle
 
@@ -13,8 +13,11 @@ class ImplementedModels(Enum):
     RADIOMICS_BINARY = "radiomics_binary"
     RADIOMICS = "radiomics"
     MEVIS = "mevis"
+    MEVIS_UNICORN = "mevis_unicorn"
     FMCIB = "fmcib"
     CTFM = "ctfm"
+    SPECTRE = "spectre"
+    RENALCLIP = "renalclip"
 
 
 def load_model_bundle(model_identifier: ImplementedModels) -> ModelBundle:
@@ -42,7 +45,7 @@ def load_model_bundle(model_identifier: ImplementedModels) -> ModelBundle:
         raise RuntimeError(f"Failed to load model {model_identifier}: {e}")
 
 
-def suggest_similar_enum(name: str, enum_cls: Type[T], cutoff: float = 0.6) -> Optional[T]:
+def suggest_similar_enum(name: str, enum_cls: type[T], cutoff: float = 0.6) -> T | None:
     """
     Suggest the closest matching enum member (case-insensitive, fuzzy).
     Returns the enum member or None.

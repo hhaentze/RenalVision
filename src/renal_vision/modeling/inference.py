@@ -5,7 +5,7 @@ and generates predictions for new images.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -20,6 +20,8 @@ from renal_vision.features.preprocessing import (
     CTPreprocessor,
     FMCIBPreprocessor,
     MevisPreprocessor,
+    RenalCLIPPreprocessor,
+    SpectrePreprocessor,
 )
 
 from .models import ModelBundle, predict_proba
@@ -33,7 +35,7 @@ class LesionPredictor:
     """
 
     def __init__(
-        self, model_identifier: Union[str, Path, ImplementedModels], validate_volume: bool = True
+        self, model_identifier: str | Path | ImplementedModels, validate_volume: bool = True
     ):
         # Load model from bundle zoo
         if isinstance(model_identifier, ImplementedModels) or (
@@ -62,7 +64,7 @@ class LesionPredictor:
         if not validate_volume:
             self.extractor.min_volume = 0
 
-    def _reconstruct_extractor(self, config: Dict[str, Any]) -> BaseFeatureExtractor:
+    def _reconstruct_extractor(self, config: dict[str, Any]) -> BaseFeatureExtractor:
         """
         Factory method to instantiate the correct extractor from config dictionary.
         """
@@ -78,6 +80,10 @@ class LesionPredictor:
             preprocessor = MevisPreprocessor(**kwargs)
         elif prep_config["name"] == "CTFMPreprocessor":
             preprocessor = CTFMPreprocessor(**kwargs)
+        elif prep_config["name"] == "RenalCLIPPreprocessor":
+            preprocessor = RenalCLIPPreprocessor(**kwargs)
+        elif prep_config["name"] == "SpectrePreprocessor":
+            preprocessor = SpectrePreprocessor(**kwargs)
         else:
             raise ValueError(f"Unknown preprocessor type in model config: {prep_config['name']}")
 
@@ -102,6 +108,18 @@ class LesionPredictor:
             from renal_vision.features.embeddings_fmcib import FMCIBExtractor
 
             return FMCIBExtractor(preprocessor=preprocessor, **ext_kwargs)
+        elif extractor_type == "renalclip":
+            from renal_vision.features.embeddings_renalclip import RenalCLIPExtractor
+
+            return RenalCLIPExtractor(preprocessor=preprocessor, **ext_kwargs)
+        elif extractor_type == "spectre":
+            from renal_vision.features.embeddings_spectre import SpectreExtractor
+
+            return SpectreExtractor(preprocessor=preprocessor, **ext_kwargs)
+        elif extractor_type == "MevisUnicornEmbeddings":
+            from renal_vision.features.embeddings_mevis_unicorn import MevisUnicornExtractor
+
+            return MevisUnicornExtractor(preprocessor=preprocessor, **ext_kwargs)
         elif extractor_type == "ImageExtractor":
             from renal_vision.features.base_extractor import ImageExtractor
 
@@ -112,9 +130,9 @@ class LesionPredictor:
     def filter_components(
         self,
         seg: ImageLike,
-        min_volume: Optional[int] = None,
+        min_volume: int | None = None,
         strict: bool = True,
-    ) -> Tuple[MetaTensor, List[Dict[str, Any]]]:
+    ) -> tuple[MetaTensor, list[dict[str, Any]]]:
         """
         Filter for connected components with a minimum target volume. By default min_volume will be loaded from the extractor config
 
@@ -140,8 +158,8 @@ class LesionPredictor:
         self,
         image: ImageLike,
         seg: ImageLike,
-        output_path: Optional[str | Path] = None,
-    ) -> Tuple[MetaTensor, List[Dict[str, Any]]]:
+        output_path: str | Path | None = None,
+    ) -> tuple[MetaTensor, list[dict[str, Any]]]:
         """
         Predict classes for all lesions in a segmentation mask.
         [Important] Class IDs start at 1 (0 is background class)
@@ -186,7 +204,7 @@ class LesionPredictor:
         results = []
 
         for features in lesion_features:
-            if features["class_id"] not in range(0, num_comp):
+            if features["class_id"] not in range(num_comp):
                 raise ValueError(f"Unknown class id: {features['class_id']}")
 
             # Extract columns in the exact order the model expects
@@ -241,7 +259,7 @@ class LesionPredictor:
         self,
         image: ImageLike,
         seg: ImageLike,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Predict the class of a single lesion (or the largest lesion in the mask).
 
