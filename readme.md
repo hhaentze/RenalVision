@@ -12,11 +12,12 @@
 <a href="https://www.comfort-ai.eu/for-patients/kidney-cancer">
   <img alt="website" src="https://img.shields.io/badge/Website-COMFORT-darkblue.svg"></a>
 <a href="https://github.com/astral-sh/ruff"><img alt="Code style: ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
+<a href="https://arxiv.org/abs/2605.07749"><img alt="Preprint" src="https://img.shields.io/badge/Preprint-arXiv-b31b1b"></a>
 
 </div>
 
 RenalVision is a modular platform for quantifying and classifying renal lesions. It keeps feature extraction (Radiomics, Neural Embeddings) cleanly separated from model training and evaluation, so swapping in a different backbone or classifier is straightforward. Trained models are packaged as self-contained bundles that carry their own preprocessing config and class mappings, making inference portable and reproducible.
-The platform ships with five pre-trained models out of the box: `radiomics_binary`, `radiomics`, `mevis`, `fmcib`, and `ctfm`. Read more about the bundles in their [readme.md](src/renal_vision/bundles/readme.md).
+The platform ships with eight pre-trained models out of the box: `radiomics_binary`, `radiomics`, `mevis`, `mevis_unicorn`, `fmcib`, `ctfm`, `spectre`, and `renalclip`. Read more about the bundles in their [readme.md](src/renal_vision/bundles/readme.md).
 
 ![Workflow](images/workflow.webp)
 
@@ -53,9 +54,7 @@ predictor = LesionPredictor(model_identifier="RADIOMICS_BINARY")
 
 # 2. Predict full mask (multi-lesion)
 mask = predictor.infer_mask(
-    image="scan.nii.gz",
-    seg="full_mask.nii.gz",
-    output_path="predictions.nii.gz"
+    image="scan.nii.gz", seg="full_mask.nii.gz", output_path="predictions.nii.gz"
 )
 
 # 3. Predict a single lesion
@@ -72,6 +71,12 @@ print(result)
   'volume': 8726                    # volume of target lesions in mm^3
  }
 ```
+
+## 🔧 Useful Tools from our Lab:
+
+- Automatic segmentation of kidneys and masses: [RenalNet](https://github.com/DIAGNijmegen/oncology-kidney-abnormality-segmentation)
+- Pre-annotated TCGA kidney tumour data: [RCC-AID](https://zenodo.org/records/20719257)
+
 
 
 ## 📦 Demo Workflow
@@ -91,9 +96,11 @@ Alternatively, test our own model directly on the KiTS data: [Demo.ipynb](notebo
 
 
 ## 📋 Citation
-Paper under Review.
+Paper under Review. Please cite this preprint: [arXiv](https://arxiv.org/abs/2605.07749).
 
-If you used any of the FM based classifiers in you research please refer to their GitHub for citation guidelines:
-[FMCIB](https://github.com/AIM-Harvard/foundation-cancer-image-biomarker),
-[CTFM](https://github.com/project-lighter/CT-FM), and
-[MMM](https://github.com/FraunhoferMEVIS/MedicalMultitaskModeling).
+If you used any of the FM based classifiers in your research please refer to their GitHub for citation guidelines:
+- [FMCIB](https://github.com/AIM-Harvard/foundation-cancer-image-biomarker)
+- [CTFM](https://github.com/project-lighter/CT-FM)
+- [MMM](https://github.com/FraunhoferMEVIS/MedicalMultitaskModeling)
+- [SPECTRE](https://github.com/cclaess/SPECTRE)
+- [RenalCLIP](https://github.com/dt-yuhui/RenalCLIP)

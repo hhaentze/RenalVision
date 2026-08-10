@@ -17,7 +17,7 @@ from renal_vision.bundles import ImplementedModels
 predictor1 = LesionPredictor(model_identifier=ImplementedModels.RADIOMICS_BINARY)
 
 # Or just pass the string directly
-predictor2 =  LesionPredictor(model_identifier="RADIOMICS_BINARY")
+predictor2 = LesionPredictor(model_identifier="RADIOMICS_BINARY")
 ```
 
 ### 1. Radiomics based Tumor/Cyst classifier
@@ -45,6 +45,13 @@ Classes:
   <img src="radiomics/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
 </div>
 
+- identifier: **MEVIS_UNICORN**
+<div align="center">
+  <img src="mevis_unicorn/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
+  <img src="mevis_unicorn/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="mevis_unicorn/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
 - identifier: **MEVIS**
 <div align="center">
   <img src="mevis/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
@@ -64,4 +71,18 @@ Classes:
   <img src="ctfm/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
   <img src="ctfm/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
   <img src="ctfm/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
+- identifier: **RENALCLIP**
+<div align="center">
+  <img src="renalclip/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
+  <img src="renalclip/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="renalclip/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
+</div>
+
+- identifier: **SPECTRE**
+<div align="center">
+  <img src="spectre/cv_confusion_matrix.webp" alt="Description of Image 1" width="30%">
+  <img src="spectre/cv_roc_curve.webp" alt="Description of Image 2" width="30%">
+  <img src="spectre/cv_pr_curve.webp" alt="Description of Image 3" width="30%">
 </div>
