@@ -3,12 +3,21 @@ Feature extractor implementation using the RenalCLIP image encoder.
 
 The 3D ResNet-18 backbone below is vendored from the official RenalCLIP release
 (https://github.com/dt-yuhui/RenalCLIP, ``models/resnet.py`` / ``models/RenalModel.py``)
-with module names preserved so the published checkpoint loads directly. We keep
-only the image backbone and return its 512-dim global-average-pooled feature
-vector -- i.e. ``RenalModel.forward3D`` -- which is what the authors feed to
-their downstream classification/prognosis heads (the 4096-dim ``global_embedding``
-projection is used only for cross-modal / zero-shot tasks and is intentionally
-omitted here).
+with module names preserved so the published checkpoint loads directly.
+
+We reproduce the authors' downstream image-embedding recipe: the 512-dim
+global-average-pooled backbone vector (``RenalModel.forward3D``) is passed through
+the trained ``global_embedding`` projection head and L2-normalized. This is
+exactly what the authors' "offline save image embeddings" notebook does
+(``global_embedding(feats)`` followed by ``feats / feats.norm(...)``), and it is
+the CLIP-aligned representation the model was optimized to expose -- i.e. the
+space aligned to the text encoder and validated on their downstream tasks. The
+``global_embedding`` head is a real MLP (``Linear -> BN -> ReLU -> Linear -> BN``)
+that lives inside the resnet module and whose weights ship in the checkpoint
+(``image_encoder_q_student.global_embedding.*``); using the raw pre-projection
+512-dim vector instead would feed the classifier a representation the authors
+never use for classification. If the checkpoint happens to lack the head, we fall
+back to the raw 512-dim features and warn.
 
 Weights: https://huggingface.co/taoyh/RenalCLIP (RenalCLIP-image-encoder-model-best-acc.pt)
 """
@@ -64,6 +73,32 @@ def _downsample_basic_block(x: torch.Tensor, planes: int, stride: int) -> torch.
     return torch.cat([out, zero_pads], dim=1)
 
 
+class GlobalEmbedding(nn.Module):
+    """
+    RenalCLIP projection head (``models/resnet.py``, ``GlobalEmbedding``).
+
+    ``Linear -> BatchNorm1d -> ReLU -> Linear -> BatchNorm1d(affine=False)`` when a
+    hidden dim is given, else a single ``Linear``. Module/parameter names are kept
+    identical to the release so the checkpoint tensors load by key.
+    """
+
+    def __init__(self, input_dim: int, hidden_dim: int | None, output_dim: int) -> None:
+        super().__init__()
+        if hidden_dim is not None:
+            self.head: nn.Module = nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU(inplace=False),
+                nn.Linear(hidden_dim, output_dim),
+                nn.BatchNorm1d(output_dim, affine=False),
+            )
+        else:
+            self.head = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(x)
+
+
 class _BasicBlock(nn.Module):
     expansion = 1
 
@@ -89,12 +124,21 @@ class RenalCLIPBackbone(nn.Module):
     """
     3D ResNet-18 image backbone (shortcut type 'A') from RenalCLIP.
 
-    ``forward`` returns the 512-dim global-average-pooled feature vector, matching
-    ``RenalModel.forward3D``.
+    ``forward`` returns the RenalCLIP downstream image embedding: the 512-dim
+    global-average-pooled backbone vector (``RenalModel.forward3D``) passed through
+    the ``global_embedding`` projection head and L2-normalized, matching the
+    authors' offline embedding script. The projection head is attached from the
+    checkpoint by :func:`_load_backbone_weights`; until then (or if the checkpoint
+    lacks it, or ``use_projection=False``) ``forward`` returns the raw 512-dim
+    vector.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_projection: bool = True) -> None:
         super().__init__()
+        self.use_projection = use_projection
+        # Attached from the checkpoint once its dims are known (see loader below).
+        self.global_embedding: GlobalEmbedding | None = None
+        self._projection_out_dim: int | None = None
         self.inplanes = 64
         self.conv1 = nn.Conv3d(
             1, 64, kernel_size=7, stride=(2, 2, 2), padding=(3, 3, 3), bias=False
@@ -129,9 +173,31 @@ class RenalCLIPBackbone(nn.Module):
         x = self.layer4(x)
         return x
 
+    @property
+    def output_dim(self) -> int:
+        """Dimensionality of the vector returned by :meth:`forward`."""
+        if self._projection_active():
+            assert self._projection_out_dim is not None
+            return self._projection_out_dim
+        return 512
+
+    def _projection_active(self) -> bool:
+        return self.use_projection and self.global_embedding is not None
+
+    def attach_projection_head(
+        self, input_dim: int, hidden_dim: int | None, output_dim: int
+    ) -> None:
+        """Create the ``global_embedding`` head so its checkpoint weights can load."""
+        self.global_embedding = GlobalEmbedding(input_dim, hidden_dim, output_dim)
+        self._projection_out_dim = output_dim
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.forward_features(x)
-        return self.avgpool(x).flatten(1)
+        feats = self.avgpool(self.forward_features(x)).flatten(1)  # (N, 512)
+        if self._projection_active():
+            assert self.global_embedding is not None
+            feats = self.global_embedding(feats)
+            feats = F.normalize(feats, dim=-1)  # L2-normalize, as the authors do
+        return feats
 
 
 # ============================= Weight loading =================================
@@ -148,6 +214,28 @@ def _get_weights(url: str, filename: str) -> Path:
     return destination
 
 
+def _infer_projection_dims(
+    stripped: dict[str, torch.Tensor],
+) -> tuple | None:
+    """
+    Recover ``(input_dim, hidden_dim, output_dim)`` for the ``global_embedding``
+    head from checkpoint tensors, or ``None`` if the head is absent/incomplete.
+
+    Two layouts, matching :class:`GlobalEmbedding`:
+      * MLP:    ``head.0`` (Linear in) and ``head.3`` (Linear out) present.
+      * Linear: ``head.weight`` present.
+    """
+    w0 = stripped.get("global_embedding.head.0.weight")
+    w3 = stripped.get("global_embedding.head.3.weight")
+    if w0 is not None and w3 is not None:
+        hidden_dim, input_dim = int(w0.shape[0]), int(w0.shape[1])
+        return input_dim, hidden_dim, int(w3.shape[0])
+    w = stripped.get("global_embedding.head.weight")
+    if w is not None:
+        return int(w.shape[1]), None, int(w.shape[0])
+    return None
+
+
 def _load_backbone_weights(backbone: RenalCLIPBackbone, checkpoint_path: str | Path) -> int:
     """
     Load the RenalCLIP image-encoder weights into ``backbone``.
@@ -155,7 +243,11 @@ def _load_backbone_weights(backbone: RenalCLIPBackbone, checkpoint_path: str | P
     Mirrors the authors' ``load_state_with_same_shape`` (shape-matched, non-strict)
     but is prefix-agnostic: it unwraps ``checkpoint['model']``, strips a ``module.``
     DDP prefix, then tries the encoder prefixes used by the authors and keeps the
-    one that matches the most tensors.
+    one that matches the most tensors. The ``global_embedding`` projection head is
+    attached (with dims read from the checkpoint) and loaded alongside the backbone
+    so that :meth:`RenalCLIPBackbone.forward` can reproduce the authors' downstream
+    embedding. If the checkpoint has no head, projection is disabled and the raw
+    512-dim features are returned.
     """
     # weights_only=False: the official checkpoint is a full training checkpoint
     # (more than plain tensors); we only read its state dict below.
@@ -166,33 +258,54 @@ def _load_backbone_weights(backbone: RenalCLIPBackbone, checkpoint_path: str | P
             k.partition("module.")[2] if k.startswith("module.") else k: v for k, v in state.items()
         }
 
-    model_state = backbone.state_dict()
+    # Pick the encoder prefix that matches the most *backbone* (resnet) tensors.
     # 'student' is the authors' default model_type for the image encoder.
+    resnet_state = backbone.state_dict()  # head not attached yet -> resnet only
     prefixes = ["image_encoder_q_student.", "image_encoder_q_teacher.", "image_encoder.", ""]
-    best: dict[str, torch.Tensor] = {}
+    best_stripped: dict[str, torch.Tensor] = {}
+    best_n = -1
     for prefix in prefixes:
         stripped = {k[len(prefix) :]: v for k, v in state.items() if k.startswith(prefix)}
-        matched = {
-            k: v
-            for k, v in stripped.items()
-            if k in model_state and v.shape == model_state[k].shape
-        }
-        if len(matched) > len(best):
-            best = matched
+        n = sum(
+            1 for k, v in stripped.items() if k in resnet_state and v.shape == resnet_state[k].shape
+        )
+        if n > best_n:
+            best_stripped, best_n = stripped, n
 
-    backbone.load_state_dict(best, strict=False)
-    if len(best) < len(model_state):
+    # Attach the projection head (if present) so its weights load and forward()
+    # reproduces the authors' downstream embedding.
+    dims = _infer_projection_dims(best_stripped)
+    if dims is not None:
+        backbone.attach_projection_head(*dims)
+    else:
+        backbone.use_projection = False
         warnings.warn(
-            f"RenalCLIP: loaded {len(best)}/{len(model_state)} backbone tensors from "
+            "RenalCLIP: no GlobalEmbedding projection head found in the checkpoint; "
+            "falling back to the raw 512-dim backbone features. The authors' downstream "
+            "embedding uses the projected + L2-normalized vector -- check the checkpoint."
+        )
+
+    model_state = backbone.state_dict()  # now includes the head, if attached
+    matched = {
+        k: v
+        for k, v in best_stripped.items()
+        if k in model_state and v.shape == model_state[k].shape
+    }
+    backbone.load_state_dict(matched, strict=False)
+    if len(matched) < len(model_state):
+        warnings.warn(
+            f"RenalCLIP: loaded {len(matched)}/{len(model_state)} tensors from "
             f"{checkpoint_path}. Check the checkpoint file and its key layout."
         )
-    return len(best)
+    return len(matched)
 
 
 def renalclip_backbone(
-    eval_mode: bool = True, weights_path: str | Path | None = None
+    eval_mode: bool = True,
+    weights_path: str | Path | None = None,
+    use_projection: bool = True,
 ) -> RenalCLIPBackbone:
-    backbone = RenalCLIPBackbone()
+    backbone = RenalCLIPBackbone(use_projection=use_projection)
     if weights_path is None:
         weights_path = _get_weights(RENALCLIP_WEIGHTS_URL, RENALCLIP_WEIGHTS_FILENAME)
     _load_backbone_weights(backbone, weights_path)
@@ -211,20 +324,25 @@ class RenalCLIPExtractor(BaseFeatureExtractor):
         feature_names: list[str] | None = None,
         min_volume: int = 400,
         weights_path: str | Path | None = None,
+        use_projection: bool = True,
     ) -> None:
         if preprocessor is None:
             preprocessor = RenalCLIPPreprocessor()
 
         super().__init__(preprocessor, min_volume)
 
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = renalclip_backbone(
+            weights_path=weights_path, use_projection=use_projection
+        ).to(self.device)
+        self.model.eval()
+
+        # Derived from the model so it tracks the projected (4096-d) vs raw (512-d)
+        # embedding rather than being hard-coded.
         if feature_names is None:
-            self._active_features = [f"F{f}" for f in range(512)]
+            self._active_features = [f"F{f}" for f in range(self.model.output_dim)]
         else:
             self._active_features = feature_names
-
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = renalclip_backbone(weights_path=weights_path).to(self.device)
-        self.model.eval()
 
     @property
     def feature_names(self) -> list[str]:
