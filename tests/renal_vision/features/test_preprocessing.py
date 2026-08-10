@@ -240,13 +240,14 @@ class TestAugmentations:
 
         component1 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
 
-        # first chance
-        component2 = next(preprocessor.stream_components(image, seg, min_volume=1, augment=True))
-        # second chance
-        if np.array_equal(component1[0], component2[0]):
+        # We allow multiple attempts to get a different augmentation, as some augmentations may randomly produce the same output.
+        # SpectrePreprocessor has very conservative augmentations (as it handles normalization itself), so we allow more attempts for it.
+        for _ in range(4 if "Spectre" in preprocessor_class.__name__ else 2):
             component2 = next(
                 preprocessor.stream_components(image, seg, min_volume=1, augment=True)
             )
+            if not np.array_equal(component1[0], component2[0]):
+                break
 
         assert not np.array_equal(component1[0], component2[0]), "images should not be equal"
         assert component1[2] == component2[2], "metadata should be equal"
