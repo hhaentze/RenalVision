@@ -1,6 +1,6 @@
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,10 +27,10 @@ class MetricResult:
     """
 
     scores: np.ndarray  # Shape: (N_rounds,)
-    curves: Optional[np.ndarray] = (
+    curves: np.ndarray | None = (
         None  # Shape: (N_rounds, grid_points) Content: Interpolated Y-values
     )
-    x_grid: Optional[np.ndarray] = None  # Shape: (grid_points,) Content: Interpolated X-values
+    x_grid: np.ndarray | None = None  # Shape: (grid_points,) Content: Interpolated X-values
     use_t_dist: bool = False  # CI calculation method
 
     @property
@@ -38,7 +38,7 @@ class MetricResult:
         return float(np.nanmean(self.scores))
 
     @property
-    def ci_score(self) -> Tuple[float, float]:
+    def ci_score(self) -> tuple[float, float]:
         # Filter NaNs
         valid_scores = self.scores[~np.isnan(self.scores)]
         n = len(valid_scores)
@@ -64,22 +64,42 @@ class MetricResult:
         return np.array([])
 
     @property
-    def ci_band(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def ci_band(self) -> tuple[np.ndarray, np.ndarray] | None:
         if len(self.scores) < 2 or self.curves is None:
             return None
-        return (
-            np.percentile(self.curves, 2.5, axis=0),
-            np.percentile(self.curves, 97.5, axis=0),
-        )
+
+        # NaN-aware throughout: a fold missing a class contributes an all-NaN row.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            if self.use_t_dist:
+                # --- CV Logic: Student's t-distribution (matches ci_score) ---
+                n_valid = np.sum(~np.isnan(self.curves), axis=0)
+                mean = np.nanmean(self.curves, axis=0)
+                sd = np.nanstd(self.curves, axis=0, ddof=1)
+                se = np.divide(
+                    sd,
+                    np.sqrt(np.maximum(n_valid, 1)),
+                    out=np.full_like(mean, np.nan),
+                    where=n_valid > 1,
+                )
+                t_crit = stats.t.ppf(0.975, df=np.maximum(n_valid - 1, 1))
+                low, high = mean - t_crit * se, mean + t_crit * se
+            else:
+                # --- Bootstrap Logic: Percentiles ---
+                low = np.nanpercentile(self.curves, 2.5, axis=0)
+                high = np.nanpercentile(self.curves, 97.5, axis=0)
+
+        # Both ROC and PR are bounded in [0, 1]
+        return (np.clip(low, 0.0, 1.0), np.clip(high, 0.0, 1.0))
 
 
 # --- The Evaluator ---
 class ModelEvaluator:
     def __init__(
         self,
-        y_true: Union[np.ndarray, List, List[np.ndarray]],
-        y_proba: Union[np.ndarray, List, List[np.ndarray]],
-        class_names: Optional[List[str]] = None,
+        y_true: np.ndarray | list | list[np.ndarray],
+        y_proba: np.ndarray | list | list[np.ndarray],
+        class_names: list[str] | None = None,
     ):
         """
         Smart Init:
@@ -129,7 +149,14 @@ class ModelEvaluator:
         if self.n_classes == 2 and self.y_true_bin_pooled.shape[1] == 1:
             self.y_true_bin_pooled = np.hstack((1 - self.y_true_bin_pooled, self.y_true_bin_pooled))
 
-        self._cache: Dict[Tuple[str, bool], Dict[Union[int, str], MetricResult]] = {}
+        # 3b. Per-class prevalence == chance baseline for the PR curve.
+        #     Pooled across folds in CV mode (per-fold prevalences differ only marginally).
+        self.n_pos = {i: int(self.y_true_bin_pooled[:, i].sum()) for i in self.active_classes}
+        self.prevalence = {
+            i: float(self.y_true_bin_pooled[:, i].mean()) for i in self.active_classes
+        }
+
+        self._cache: dict[tuple[str, bool], dict[int | str, MetricResult]] = {}
 
         # 4. Plotting Defaults
         self.plot_style = {
@@ -165,15 +192,20 @@ class ModelEvaluator:
         return self._format_metric_table("roc", with_ci)
 
     def get_ap(self, with_ci: bool = True) -> pd.DataFrame:
-        """Returns a DataFrame with Average Precision scores (and CIs if requested)."""
+        """
+        Returns a DataFrame with Average Precision scores (and CIs if requested).
+        Includes the chance baseline (prevalence), the lift over it, and n_pos --
+        AP is not interpretable without them.
+        """
         return self._format_metric_table("pr", with_ci)
 
     def plot_roc(
-        self, show_ci: bool = False, figsize=(8, 6), output_path: Optional[str] = None, **kwargs
+        self, show_ci: bool = False, figsize=(8, 6), output_path: str | None = None, **kwargs
     ):
         results = self._get_data("roc", show_ci)
         self._plot_generic(
             results,
+            "roc",
             "ROC Curve",
             "False Positive Rate",
             "True Positive Rate",
@@ -184,11 +216,12 @@ class ModelEvaluator:
         )
 
     def plot_pr(
-        self, show_ci: bool = False, figsize=(8, 6), output_path: Optional[str] = None, **kwargs
+        self, show_ci: bool = False, figsize=(8, 6), output_path: str | None = None, **kwargs
     ):
         results = self._get_data("pr", show_ci)
         self._plot_generic(
             results,
+            "pr",
             "Precision-Recall Curve",
             "Recall",
             "Precision",
@@ -198,12 +231,89 @@ class ModelEvaluator:
             **kwargs,
         )
 
+    def plot_pr_grid(
+        self,
+        show_ci: bool = False,
+        ncols: int = 3,
+        figsize=None,
+        sharey: bool = True,
+        output_path: str | None = None,
+        **kwargs,
+    ):
+        """
+        One PR panel per class, each with its own prevalence baseline.
+
+        Unlike ROC (chance is 0.5 everywhere), the PR chance level is class-specific,
+        so overlaying all classes in one axis gives them incomparable baselines.
+        """
+        results = self._get_data("pr", show_ci)
+
+        valid_keys = set(self.plot_style.keys())
+        for key in kwargs:
+            if key not in valid_keys:
+                raise ValueError(
+                    f"Invalid style parameter: '{key}'. Available options: {valid_keys}"
+                )
+        style = {**self.plot_style, **kwargs}
+        colors = style["colors"]
+
+        n = len(self.active_classes)
+        ncols = max(1, min(ncols, n))
+        nrows = int(np.ceil(n / ncols))
+        figsize = figsize or (4.0 * ncols, 3.6 * nrows)
+
+        fig, axes = plt.subplots(
+            nrows, ncols, figsize=figsize, sharex=True, sharey=sharey, squeeze=False
+        )
+        flat = axes.ravel()
+
+        for ax, i in zip(flat, self.active_classes):
+            res = results[i]
+            prev = self.prevalence[i]
+
+            if res.x_grid is not None:
+                ax.plot(res.x_grid, res.mean_curve, color=colors[i], lw=style["linewidth"])
+                if show_ci and res.ci_band is not None:
+                    ax.fill_between(
+                        res.x_grid, *res.ci_band, color=colors[i], alpha=style["alpha_band"]
+                    )
+
+            ax.axhline(prev, color="grey", ls="--", lw=1, zorder=0)
+
+            lift = res.mean_score / prev if prev > 0 else np.nan
+            sub = f"AP={res.mean_score:.2f}"
+            if show_ci:
+                low, high = res.ci_score
+                sub += f" [{low:.2f}-{high:.2f}]"
+            sub += f"\nchance={prev:.2f} ({lift:.1f}x), n₊={self.n_pos[i]}"
+
+            ax.set_title(f"{self.class_names[i]}\n{sub}", fontsize="small")
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1.02)
+            if style["show_grid"]:
+                ax.grid(True, linestyle="--", alpha=0.5)
+
+        for ax in flat[n:]:
+            ax.set_visible(False)
+
+        fig.supxlabel("Recall")
+        fig.supylabel("Precision")
+        fig.tight_layout()
+
+        if output_path:
+            fig.savefig(
+                output_path, bbox_inches="tight", dpi=style["dpi"], pad_inches=style["pad_inches"]
+            )
+        else:
+            plt.show()
+        plt.close(fig)
+
     def plot_cm(
         self,
         normalize: bool = False,
         title: str = "Confusion Matrix",
         figsize=(8, 6),
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
     ):
         """Plots the global (pooled) confusion matrix."""
 
@@ -243,18 +353,38 @@ class ModelEvaluator:
         for cls_id in self.active_classes:
             res = results[cls_id]
             name = self.class_names[cls_id]
-            rows.append(self._make_row(name, res, with_ci))
+            rows.append(self._make_row(name, res, with_ci, metric_type, cls_id))
 
         if "macro" in results:
-            rows.append(self._make_row("MACRO AVERAGE", results["macro"], with_ci))
+            rows.append(self._make_row("MACRO AVERAGE", results["macro"], with_ci, metric_type))
 
         df = pd.DataFrame(rows)
         if not df.empty:
             df.set_index("Class", inplace=True)
         return df
 
-    def _make_row(self, name: str, res: MetricResult, with_ci: bool) -> dict:
+    def _make_row(
+        self,
+        name: str,
+        res: MetricResult,
+        with_ci: bool,
+        metric_type: str = "roc",
+        cls_id: int | None = None,
+    ) -> dict:
         row = {"Class": name, "Mean": round(res.mean_score, 3)}
+
+        # AP is only interpretable relative to prevalence -> carry the baseline in the table.
+        if metric_type == "pr":
+            if cls_id is not None:
+                prev = self.prevalence[cls_id]
+                row["Chance"] = round(prev, 3)
+                row["Lift"] = round(res.mean_score / prev, 2) if prev > 0 else np.nan
+                row["n_pos"] = self.n_pos[cls_id]
+            else:
+                row["Chance"] = np.nan
+                row["Lift"] = np.nan
+                row["n_pos"] = np.nan
+
         if with_ci:
             low, high = res.ci_score
             row["95% CI Lower"] = round(low, 3)
@@ -262,7 +392,7 @@ class ModelEvaluator:
             row["CI Range"] = f"[{low:.2f} - {high:.2f}]"
         return row
 
-    def _get_data(self, metric: str, show_ci: bool) -> Dict[Union[int, str], MetricResult]:
+    def _get_data(self, metric: str, show_ci: bool) -> dict[int | str, MetricResult]:
         """Lazy loader: Returns cached data or triggers calculation."""
         cache_key = (metric, show_ci)
         if cache_key in self._cache:
@@ -275,15 +405,13 @@ class ModelEvaluator:
         self._cache[cache_key] = data
         return data
 
-    def _compute_distribution(
-        self, metric: str, n_rounds: int
-    ) -> Dict[Union[int, str], MetricResult]:
+    def _compute_distribution(self, metric: str, n_rounds: int) -> dict[int | str, MetricResult]:
         """
         Calculates Class-wise AND Macro distributions.
         - If self.is_cv is True: Iterates through Folds.
         - If self.is_cv is False: Iterates through Bootstrap Resamples.
         """
-        results: Dict[int, Dict[str, List[Any]]] = {
+        results: dict[int, dict[str, list[Any]]] = {
             i: {"scores": [], "curves": []} for i in self.active_classes
         }
         macro_scores = []
@@ -323,7 +451,7 @@ class ModelEvaluator:
                 # Bootstrap generator already yields binarized data from pooled
                 y_bin_curr = y_true_curr
 
-            round_class_scores: List[float] = []
+            round_class_scores: list[float] = []
 
             for i in self.active_classes:
                 # --- CHECK FOR MISSING CLASS IN FOLD/SAMPLE ---
@@ -343,7 +471,8 @@ class ModelEvaluator:
                     else:
                         p, r, _ = precision_recall_curve(y_bin_curr[:, i], y_prob_curr[:, i])
                         score = average_precision_score(y_bin_curr[:, i], y_prob_curr[:, i])
-                        y_interp = self._interpolate(x_grid, r, p)
+                        # PR needs step-wise, not linear, interpolation (see _interpolate_pr)
+                        y_interp = self._interpolate_pr(x_grid, r, p)
 
                 results[i]["scores"].append(float(score))
                 results[i]["curves"].append(y_interp)
@@ -359,7 +488,7 @@ class ModelEvaluator:
                 macro_scores.append(np.nan)  # type: ignore
 
         # --- 3. PACKAGE RESULTS ---
-        final: Dict[Union[int, str], MetricResult] = {}
+        final: dict[int | str, MetricResult] = {}
         for i in self.active_classes:
             final[i] = MetricResult(
                 scores=np.array(results[i]["scores"]),
@@ -376,13 +505,14 @@ class ModelEvaluator:
 
     def _plot_generic(
         self,
-        results: Dict[Union[int, str], MetricResult],
+        results: dict[int | str, MetricResult],
+        metric: str,
         title,
         xlabel,
         ylabel,
         show_ci,
         figsize,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
         **kwargs,
     ):
         # Validate kwargs against defined style
@@ -398,7 +528,11 @@ class ModelEvaluator:
         plt.figure(figsize=figsize)
         for i in self.active_classes:
             res = results[i]
-            label = f"{self.class_names[i]} ({res.mean_score:.2f})"
+            label = f"{self.class_names[i]} ({res.mean_score:.2f}"
+            if metric == "pr":
+                # Baseline differs per class -> state it wherever the AP is stated.
+                label += f", chance {self.prevalence[i]:.2f}"
+            label += ")"
             if show_ci:
                 label += f" [{res.ci_score[0]:.2f}-{res.ci_score[1]:.2f}]"
 
@@ -415,7 +549,15 @@ class ModelEvaluator:
             # We add the macro score to the legend, but don't plot a curve/band to avoid clutter
             plt.plot([], [], " ", label=f"MACRO AVG ({results['macro'].mean_score:.2f})")
 
-        plt.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5) if "ROC" in title else None
+        # --- CHANCE BASELINE ---
+        if metric == "roc":
+            plt.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5)
+        elif metric == "pr":
+            # One horizontal line per class at its prevalence. Colour-matched to its curve;
+            # use plot_pr_grid() if these collide.
+            for i in self.active_classes:
+                plt.axhline(self.prevalence[i], color=colors[i], ls=":", lw=1, alpha=0.6, zorder=0)
+
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(title)
@@ -441,6 +583,35 @@ class ModelEvaluator:
         x, y = x[mask], y[mask]
         idx = np.argsort(x)
         return np.interp(x_grid, x[idx], y[idx])
+
+    def _interpolate_pr(self, x_grid, recall, precision):
+        """
+        Step-wise interpolation for PR curves.
+
+        Linear interpolation is wrong here for two reasons:
+        1. Recall has many tied values (thresholds that only add false positives),
+           which np.interp does not handle deterministically.
+        2. sklearn appends a sentinel point at (recall=0, precision=1); after sorting
+           it lands on the left edge of the grid and drags every curve up towards 1.
+
+        Instead we drop the sentinel and take the max precision achievable at
+        recall >= x, which is the standard envelope used for averaged PR curves.
+        """
+        r, p = np.asarray(recall)[:-1], np.asarray(precision)[:-1]
+        mask = np.isfinite(r) & np.isfinite(p)
+        r, p = r[mask], p[mask]
+        if r.size == 0:
+            return np.full_like(x_grid, np.nan)
+
+        # Collapse tied recall values to their max precision FIRST. Without this,
+        # np.argsort (unstable) scrambles the order within a tie group and both the
+        # envelope and np.interp pick an arbitrary member of it.
+        r_u, inverse = np.unique(r, return_inverse=True)
+        p_u = np.zeros_like(r_u, dtype=float)
+        np.maximum.at(p_u, inverse, p)
+
+        p_env = np.maximum.accumulate(p_u[::-1])[::-1]  # max precision at recall >= r
+        return np.interp(x_grid, r_u, p_env)
 
     def _ensure_matrix(self, data):
         """Handles lists of lists or pandas objects."""
