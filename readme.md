@@ -22,7 +22,7 @@ The platform ships with eight pre-trained models out of the box: `radiomics_bina
 ![Workflow](images/workflow.webp)
 
 ## 🛠️ Installation
-We recommend Python 3.10. The base install covers radiomics support. If you want to run foundation models please specify these as additional dependencies or use the `install-all` option.
+We recommend Python 3.10. The base install covers radiomics support. If you want to run foundation models please specify these as additional dependencies.
 ```bash
 # Clone or download the repository
 git clone https://github.com/hhaentze/RenalVision.git
@@ -31,9 +31,10 @@ cd RenalVision
 # Base install (radiomics only)
 make install
 
-# [Optional] Full install including all FM extractors
-make install-all
+# [Optional] install other dependencies, for example the M3 (unicorn) model
+make mevis_unicorn
 ```
+(Our implementations of M3 default and M3 unicorn are incompatible with each other. If you want to run both, please specify independent virtual environments.)
 
 ## 🔬 Inference
 The platform exposes a unified command-line interface: rv.
@@ -80,19 +81,10 @@ print(result)
 
 
 ## 📦 Demo Workflow
-The [KiTS23 dataset](https://github.com/neheller/kits23) is publicly available and can be downloaded via their official starter kit:
-```bash
-git clone https://github.com/neheller/kits23
-cd kits23
-pip3 install .
-kits23_download_data
-```
-This will download the CT scans and segmentation masks to ./dataset/ (~46GB). The masks include kidney, tumor, and cyst labels. (If you don't have 46GB of available storage you can simply stop the download earlier.)
 
-Check out how to use this dataset to train and evaluate your own classification model. No GPU needed! [Tutorial.ipynb](notebooks/tutorial.ipynb)
+Test the pretrained model directly on data from RCC-AID: [Inference.ipynb](notebooks/inference.ipynb)
 
-Alternatively, test our own model directly on the KiTS data: [Demo.ipynb](notebooks/demo.ipynb)
-
+Train and evaluate your own classification model on the KiTS23 data. No GPU needed! [Training.ipynb](notebooks/training.ipynb)
 
 
 ## 📋 Citation
