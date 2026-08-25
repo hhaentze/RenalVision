@@ -22,7 +22,20 @@ The platform ships with eight pre-trained models out of the box: `radiomics_bina
 ![Workflow](images/workflow.webp)
 
 ## 🛠️ Installation
-We recommend Python 3.10. The base install covers radiomics support. If you want to run foundation models please specify these as additional dependencies.
+We recommend Python 3.10. The base install covers radiomics support. If you want to run foundation models please specify these as additional dependencies: run `make install` once, then any number of the commands below.
+Run `make list-models` for the current list.
+(Our implementations of M3 default and M3 unicorn are incompatible with each other. If you want to run both, please specify independent virtual environments.)
+
+| Model         | Command                    | Notes                          |
+|---------------|----------------------------|--------------------------------|
+| Radiomics     | `make install`             | included in base               |
+| M3 (default)  | `make model-mevis`         | ⚠️ conflicts with M3 UNICORN   |
+| M3 (UNICORN)  | `make model-mevis_unicorn` | ⚠️ conflicts with M3 default   |
+| RenalCLIP     | `make install`             | included in base     |
+| SPECTRE       | `make model-spectre`       |                                |
+| CT-FM         | `make model-ctfm`          |           |
+| FMCIB         | `make model-fmcib`         |`          |
+
 ```bash
 # Clone or download the repository
 git clone https://github.com/hhaentze/RenalVision.git
@@ -32,9 +45,9 @@ cd RenalVision
 make install
 
 # [Optional] install other dependencies, for example the M3 (unicorn) model
-make mevis_unicorn
+make model-mevis_unicorn
 ```
-(Our implementations of M3 default and M3 unicorn are incompatible with each other. If you want to run both, please specify independent virtual environments.)
+
 
 ## 🔬 Inference
 The platform exposes a unified command-line interface: rv.

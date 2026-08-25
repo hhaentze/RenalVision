@@ -23,12 +23,24 @@ install-dev:
 	pip install -e ".[dev, radiomics]"
 	pre-commit install
 
-# default CTFM is very heavy (forces cuda GPU), additionally, pydantic throws version conflicts
-# -> we only install the front door
-# Core dependencies are already covered by the base installation
-install-all: install-dev
-	pip install -e ".[mevis]"
-	pip install lighter-zoo==0.1.3 foundation-cancer-image-biomarker==1.0.0 --no-deps
+# Generic: make model-spectre, make model-mevis_unicorn, make model-end2end
+model-%:
+	pip install -e ".[$*]"
+
+# Override specific targets
+# CTFM/FMCIB force a CUDA torch and conflict on pydantic -> front door only.
+model-ctfm:
+	pip install lighter-zoo==0.1.3 --no-deps
+
+model-fmcib:
+	pip install foundation-cancer-image-biomarker==1.0.0 --no-deps
+
+list-models:
+	@python -c "import re, pathlib; \
+	text = pathlib.Path('pyproject.toml').read_text(); \
+	m = re.search(r'\[project\.optional-dependencies\](.*?)\n\[', text, re.S); \
+	section = m.group(1) if m else ''; \
+	print('\n'.join(re.findall(r'^([a-zA-Z0-9_-]+)\s*=', section, re.M)))"
 
 # Quality Checks
 lint:
