@@ -33,8 +33,8 @@ Run `make list-models` for the current list.
 | M3 (UNICORN)  | `make model-mevis_unicorn` | ⚠️ conflicts with M3 default   |
 | RenalCLIP     | `make install`             | included in base     |
 | SPECTRE       | `make model-spectre`       |                                |
-| CT-FM         | `make model-ctfm`          |           |
-| FMCIB         | `make model-fmcib`         |`          |
+| CT-FM         | `make model-ctfm`          | installed `--no-deps` |
+| FMCIB         | `make model-fmcib`         | installed `--no-deps` |
 
 ```bash
 # Clone or download the repository
@@ -109,3 +109,26 @@ If you used any of the FM based classifiers in your research please refer to the
 - [MMM](https://github.com/FraunhoferMEVIS/MedicalMultitaskModeling)
 - [SPECTRE](https://github.com/cclaess/SPECTRE)
 - [RenalCLIP](https://github.com/dt-yuhui/RenalCLIP)
+
+## ⚖️ Licensing
+
+RenalVision's own code and trained classifier heads are licensed Apache-2.0.
+
+
+Feature extractors are third-party works with their own licenses. RenalVision distributes no third-party weights — they are fetched at runtime from the original providers. The terms of the extractor you choose apply to your use of that pipeline:
+
+| Bundle | Code used | Weights license | Commercial use |
+|---|---|---|---|
+| radiomics, radiomics_binary | PyRadiomics (BSD-3-Clause) | — | ✅ |
+| ctfm | ctfm pip pkg (MIT) | Apache-2.0 | ✅ |
+| renalclip | reimplementation | MIT | ✅ |
+| fmcib | fmcib pip pkg + adapted snippets (MIT) | CC-BY-4.0 | ✅ with attribution |
+| spectre | spectre-fm pip pkg (MIT) | CC-BY-NC-SA-4.0 | ❌ non-commercial |
+| mevis, mevis_unicorn | medicalmultitaskmodeling pip pkg (Fraunhofer non-commercial research license) | same | ❌ non-commercial, no redistribution, research institutions only |
+
+> **Note:** This table is provided for orientation only. It reflects our reading of the upstream licenses at the time of writing and carries no  guarantee of accuracy or completeness.
+Before relying on any pipeline — especially commercially or clinically — consult the upstream license texts directly and seek your own legal advice.
+
+> RenalVision is research software. It is not CE-marked or FDA-cleared, and no
+conformity assessment has been performed for it or for any of the included
+feature extractors. The M3 (`mevis`, `mevis_unicorn`) license additionally prohibits the use of any results obtained from that model for diagnostic or therapeutic purposes.
